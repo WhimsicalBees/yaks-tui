@@ -31,6 +31,10 @@ const (
 type loadedMsg struct{ roots []yaks.Yak }
 type errMsg struct{ err error }
 type stateChangedMsg struct{}
+type loadedMsgPreserving struct {
+	roots  []yaks.Yak
+	prevID string
+}
 
 type Model struct {
 	client dataSource
@@ -99,12 +103,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshDetail()
 		return m, nil
 
+	case loadedMsgPreserving:
+		m.roots = msg.roots
+		m.rebuildRows()
+		if idx := tree.IndexOfID(m.rows, msg.prevID); idx >= 0 {
+			m.cursor = idx
+		}
+		m.cursor = tree.ClampCursor(m.cursor, len(m.rows))
+		m.refreshDetail()
+		return m, nil
+
 	case errMsg:
 		m.status = msg.err.Error()
 		return m, nil
 
 	case stateChangedMsg:
-		// A mutation succeeded; reload preserving cursor by id.
+		m.status = ""
 		return m, m.reloadPreservingCmd()
 
 	case tea.KeyMsg:
@@ -163,6 +177,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.rebuildRows()
 			m.refreshDetail()
 		}
+	case key.Matches(msg, m.keys.Wip):
+		return m, m.setStateCmd(yaks.StateWip)
+	case key.Matches(msg, m.keys.Blocked):
+		return m, m.setStateCmd(yaks.StateBlocked)
+	case key.Matches(msg, m.keys.Done):
+		return m, m.setStateCmd(yaks.StateDone)
+	case key.Matches(msg, m.keys.Todo):
+		return m, m.setStateCmd(yaks.StateTodo)
+	case key.Matches(msg, m.keys.Reload):
+		return m, m.reloadPreservingCmd()
 	}
 	return m, nil
 }
@@ -202,6 +226,19 @@ func (m *Model) refreshDetail() {
 	m.detail.SetContent(renderMarkdown(detailMarkdown(y), m.detail.Width))
 }
 
+func (m Model) setStateCmd(state string) tea.Cmd {
+	id := m.selectedID()
+	if id == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := m.client.SetState(context.Background(), id, state); err != nil {
+			return errMsg{err}
+		}
+		return stateChangedMsg{}
+	}
+}
+
 func (m Model) reloadPreservingCmd() tea.Cmd {
 	prevID := m.selectedID()
 	return func() tea.Msg {
@@ -209,8 +246,7 @@ func (m Model) reloadPreservingCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		_ = prevID // cursor restoration wired in Task 14
-		return loadedMsg{roots}
+		return loadedMsgPreserving{roots: roots, prevID: prevID}
 	}
 }
 

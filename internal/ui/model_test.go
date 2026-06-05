@@ -82,6 +82,42 @@ func TestFocusToggle(t *testing.T) {
 	}
 }
 
+func TestTriageWipCallsSetState(t *testing.T) {
+	sc := &stubClient{roots: twoYaks()}
+	m := New(sc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m3, _ := m2.Update(loadedMsg{roots: twoYaks()})
+	// cursor on "a"; press w
+	m4, cmd := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	_ = m4
+	if cmd == nil {
+		t.Fatal("expected a command from triage key")
+	}
+	// Execute the command to trigger the SetState call.
+	msg := cmd()
+	if _, ok := msg.(stateChangedMsg); !ok {
+		t.Fatalf("expected stateChangedMsg, got %T", msg)
+	}
+	if len(sc.setCalls) != 1 || sc.setCalls[0].id != "a" || sc.setCalls[0].state != "wip" {
+		t.Fatalf("SetState calls = %+v", sc.setCalls)
+	}
+}
+
+func TestReloadPreservesCursorByID(t *testing.T) {
+	m := loaded(t, twoYaks())
+	// move cursor to "b"
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	mm := m2.(Model)
+	if mm.selectedID() != "b" {
+		t.Fatalf("precondition: selected = %q", mm.selectedID())
+	}
+	// Simulate a reload that returns the same tree; cursor should stay on "b".
+	m3, _ := mm.Update(loadedMsgPreserving{roots: twoYaks(), prevID: "b"})
+	if m3.(Model).selectedID() != "b" {
+		t.Fatalf("cursor not preserved: selected = %q", m3.(Model).selectedID())
+	}
+}
+
 func TestCollapseExpand(t *testing.T) {
 	roots := []yaks.Yak{{ID: "p", Name: "parent", State: "todo",
 		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}}}}
