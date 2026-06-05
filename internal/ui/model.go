@@ -143,10 +143,12 @@ func (m *Model) layout() {
 }
 
 func (m *Model) refreshDetail() {
-	// Filled in Task 12 (glamour render). Placeholder keeps the build green.
-	if m.cursor < len(m.rows) {
-		m.detail.SetContent(m.rows[m.cursor].Yak.Name)
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		m.detail.SetContent(subtle.Render("Select a yak"))
+		return
 	}
+	y := *m.rows[m.cursor].Yak
+	m.detail.SetContent(renderMarkdown(detailMarkdown(y), m.detail.Width))
 }
 
 func (m Model) reloadPreservingCmd() tea.Cmd {

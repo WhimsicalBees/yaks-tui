@@ -34,6 +34,32 @@ func TestRenderTreeContainsYaksAndCursor(t *testing.T) {
 	}
 }
 
+func TestDetailMarkdownIncludesNameAndContext(t *testing.T) {
+	ctx := "Hello **world**"
+	y := yaks.Yak{ID: "a", Name: "alpha", State: "wip", Context: &ctx, Tags: []string{"@bug"}}
+	md := detailMarkdown(y)
+	if !contains(md, "alpha") {
+		t.Errorf("detail md missing name:\n%s", md)
+	}
+	if !contains(md, "Hello") {
+		t.Errorf("detail md missing context:\n%s", md)
+	}
+	if !contains(md, "bug") {
+		t.Errorf("detail md missing tag:\n%s", md)
+	}
+}
+
+func TestDetailMarkdownNoContext(t *testing.T) {
+	y := yaks.Yak{ID: "a", Name: "empty", State: "todo"}
+	md := detailMarkdown(y)
+	if !contains(md, "empty") {
+		t.Errorf("missing name:\n%s", md)
+	}
+	if !contains(md, "_No context_") {
+		t.Errorf("expected no-context placeholder:\n%s", md)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (indexOf(s, sub) >= 0)
 }
