@@ -50,3 +50,21 @@ func (c *Client) List(ctx context.Context) ([]Yak, error) {
 	}
 	return roots, nil
 }
+
+// ValidState reports whether s is a state yx understands.
+func ValidState(s string) bool {
+	switch s {
+	case StateTodo, StateWip, StateBlocked, StateDone:
+		return true
+	}
+	return false
+}
+
+// SetState sets a yak's state by id (ids are stable; names can collide).
+func (c *Client) SetState(ctx context.Context, id, state string) error {
+	if !ValidState(state) {
+		return fmt.Errorf("invalid state %q", state)
+	}
+	_, err := c.r.Run(ctx, "state", id, state)
+	return err
+}

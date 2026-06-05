@@ -44,3 +44,31 @@ func TestClientList(t *testing.T) {
 		}
 	}
 }
+
+func TestClientSetState(t *testing.T) {
+	fr := &fakeRunner{out: []byte("Set 'x' state to wip\n")}
+	c := NewClient(fr)
+	if err := c.SetState(context.Background(), "write-tests-hgny", StateWip); err != nil {
+		t.Fatalf("SetState: %v", err)
+	}
+	want := []string{"state", "write-tests-hgny", "wip"}
+	if len(fr.gotArgs) != len(want) {
+		t.Fatalf("args = %v, want %v", fr.gotArgs, want)
+	}
+	for i := range want {
+		if fr.gotArgs[i] != want[i] {
+			t.Fatalf("args = %v, want %v", fr.gotArgs, want)
+		}
+	}
+}
+
+func TestClientSetStateRejectsBadState(t *testing.T) {
+	fr := &fakeRunner{}
+	c := NewClient(fr)
+	if err := c.SetState(context.Background(), "id", "frobnicate"); err == nil {
+		t.Fatal("expected error for invalid state")
+	}
+	if fr.gotArgs != nil {
+		t.Fatal("should not have called yx for invalid state")
+	}
+}
