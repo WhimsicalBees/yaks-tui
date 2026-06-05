@@ -118,6 +118,67 @@ func TestReloadPreservesCursorByID(t *testing.T) {
 	}
 }
 
+func TestTriageNoSelectionIsNoOp(t *testing.T) {
+	// No load happened, so there are no rows and nothing is selected. A triage
+	// key must produce no command (and never call SetState).
+	sc := &stubClient{roots: twoYaks()}
+	m := New(sc)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	if cmd != nil {
+		t.Fatal("triage with no selection should return a nil command")
+	}
+	if len(sc.setCalls) != 0 {
+		t.Fatalf("SetState should not be called with no selection, got %+v", sc.setCalls)
+	}
+}
+
+func TestReloadWhenSelectedYakVanished(t *testing.T) {
+	// Cursor is on "b"; a reload returns a tree that no longer contains "b"
+	// (e.g. another client removed it). The cursor must land on a valid row,
+	// not dangle past the end.
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	mm := m2.(Model)
+	if mm.selectedID() != "b" {
+		t.Fatalf("precondition: selected = %q", mm.selectedID())
+	}
+	oneYak := []yaks.Yak{{ID: "a", Name: "alpha", State: "todo"}}
+	m3, _ := mm.Update(loadedMsgPreserving{roots: oneYak, prevID: "b"})
+	mm3 := m3.(Model)
+	if mm3.cursor < 0 || mm3.cursor >= len(mm3.rows) {
+		t.Fatalf("cursor %d out of bounds for %d rows", mm3.cursor, len(mm3.rows))
+	}
+	if mm3.selectedID() != "a" {
+		t.Fatalf("cursor should fall back to a valid yak, got %q", mm3.selectedID())
+	}
+}
+
+func TestTriageSetStateErrorSurfacesAndDoesNotReload(t *testing.T) {
+	// When SetState fails, the command yields errMsg (not stateChangedMsg), so
+	// no reload is triggered and the displayed tree stays at its pre-mutation state.
+	sc := &stubClient{roots: twoYaks(), setErr: errStub("boom")}
+	m := New(sc)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m3, _ := m2.Update(loadedMsg{roots: twoYaks()})
+	_, cmd := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	if cmd == nil {
+		t.Fatal("expected a command from triage key")
+	}
+	msg := cmd()
+	em, ok := msg.(errMsg)
+	if !ok {
+		t.Fatalf("expected errMsg on SetState failure, got %T", msg)
+	}
+	if em.err == nil {
+		t.Fatal("errMsg should carry the underlying error")
+	}
+}
+
+// errStub is a minimal error for exercising failure paths.
+type errStub string
+
+func (e errStub) Error() string { return string(e) }
+
 func TestCollapseExpand(t *testing.T) {
 	roots := []yaks.Yak{{ID: "p", Name: "parent", State: "todo",
 		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}}}}
