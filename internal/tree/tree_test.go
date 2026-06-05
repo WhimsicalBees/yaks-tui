@@ -52,3 +52,25 @@ func TestFlattenCollapsed(t *testing.T) {
 		}
 	}
 }
+
+func TestIndexOfID(t *testing.T) {
+	rows := Flatten(sample(), map[string]bool{})
+	if got := IndexOfID(rows, "tests"); got != 3 {
+		t.Fatalf("IndexOfID(tests) = %d, want 3", got)
+	}
+	if got := IndexOfID(rows, "missing"); got != -1 {
+		t.Fatalf("IndexOfID(missing) = %d, want -1", got)
+	}
+}
+
+func TestClampCursor(t *testing.T) {
+	if got := ClampCursor(5, 4); got != 3 {
+		t.Errorf("ClampCursor(5,4) = %d, want 3", got)
+	}
+	if got := ClampCursor(-2, 4); got != 0 {
+		t.Errorf("ClampCursor(-2,4) = %d, want 0", got)
+	}
+	if got := ClampCursor(2, 0); got != 0 {
+		t.Errorf("ClampCursor on empty = %d, want 0", got)
+	}
+}

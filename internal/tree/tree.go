@@ -38,3 +38,27 @@ func Flatten(roots []yaks.Yak, expanded map[string]bool) []Row {
 	walk(roots, 0)
 	return rows
 }
+
+// IndexOfID returns the row index whose yak has the given id, or -1.
+func IndexOfID(rows []Row, id string) int {
+	for i := range rows {
+		if rows[i].Yak.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// ClampCursor keeps a cursor within [0, n-1]; returns 0 when n == 0.
+func ClampCursor(cursor, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	if cursor < 0 {
+		return 0
+	}
+	if cursor > n-1 {
+		return n - 1
+	}
+	return cursor
+}
