@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"yaks-tui/internal/tree"
 	"yaks-tui/internal/yaks"
@@ -164,5 +165,26 @@ func (m Model) View() string {
 	if !m.ready {
 		return "loading…"
 	}
-	return "yaks-tui"
+	// Graceful guards added in Task 15; basic two-pane here.
+	bodyHeight := m.height - 2
+	treeWidth := m.width*4/10 - 2
+	detailWidth := m.width*6/10 - 2
+
+	treeBorder := blurredBorder
+	detailBorder := blurredBorder
+	if m.focus == focusTree {
+		treeBorder = focusedBorder
+	} else {
+		detailBorder = focusedBorder
+	}
+
+	left := treeBorder.Width(treeWidth).Height(bodyHeight).Render(m.renderTree(treeWidth, bodyHeight))
+	right := detailBorder.Width(detailWidth).Height(bodyHeight).Render(m.detail.View())
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+
+	bar := m.help.View(m.keys)
+	if m.status != "" {
+		bar = statusErr.Render(m.status)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, body, bar)
 }
