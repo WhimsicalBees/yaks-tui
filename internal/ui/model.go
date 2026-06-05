@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -215,18 +217,46 @@ func (m Model) flatYaks() []yaks.Yak {
 
 type jumpMsg struct{ id string }
 
+// findCmd launches fzf over the visible yaks and jumps the cursor to the
+// selection. It hands the terminal to fzf via tea.ExecProcess: Bubble Tea
+// releases the tty (exits raw mode + alt-screen), runs the command against the
+// real terminal, then restores itself and delivers the callback's message.
+//
+// Because ExecProcess wires the child's stdio to the terminal, we can't pipe
+// candidates on stdin or capture stdout with cmd.Output(). Instead shell.FzfExec
+// writes candidates to a temp file (fzf reads them via a shell stdin redirect
+// while drawing its UI on /dev/tty) and captures the selection in a second temp
+// file (shell stdout redirect). We read that file in the callback.
 func (m Model) findCmd() tea.Cmd {
-	lines := shell.FzfLines(m.flatYaks())
-	return func() tea.Msg {
-		if !shell.Available() {
+	if !shell.Available() {
+		return func() tea.Msg {
 			return errMsg{fmt.Errorf("fuzzy find needs `fzf` installed")}
 		}
-		id, err := shell.Pick(lines)
-		if err != nil {
-			return errMsg{err}
-		}
-		return jumpMsg{id}
 	}
+
+	lines := shell.FzfLines(m.flatYaks())
+	cmd, outPath, cleanup, err := shell.FzfExec(lines)
+	if err != nil {
+		cleanup()
+		return func() tea.Msg { return errMsg{err} }
+	}
+
+	return tea.ExecProcess(cmd, func(runErr error) tea.Msg {
+		defer cleanup()
+		if runErr != nil {
+			// fzf exits 130 when the user cancels (Esc/Ctrl-C); via `sh -c`
+			// that code propagates. Treat any cancel as "no selection".
+			if ee, ok := runErr.(*exec.ExitError); ok && ee.ExitCode() == 130 {
+				return jumpMsg{""}
+			}
+			return errMsg{runErr}
+		}
+		out, readErr := os.ReadFile(outPath)
+		if readErr != nil {
+			return errMsg{readErr}
+		}
+		return jumpMsg{shell.ParseFzfSelection(string(out))}
+	})
 }
 
 // current returns the expansion value for id, defaulting to true.
