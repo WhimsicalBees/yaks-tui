@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -9,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"yaks-tui/internal/shell"
 	"yaks-tui/internal/tree"
 	"yaks-tui/internal/yaks"
 )
@@ -121,6 +123,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, m.reloadPreservingCmd()
 
+	case jumpMsg:
+		if msg.id != "" {
+			if idx := tree.IndexOfID(m.rows, msg.id); idx >= 0 {
+				m.cursor = idx
+				m.refreshDetail()
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -187,8 +198,35 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.setStateCmd(yaks.StateTodo)
 	case key.Matches(msg, m.keys.Reload):
 		return m, m.reloadPreservingCmd()
+	case key.Matches(msg, m.keys.Find):
+		return m, m.findCmd()
 	}
 	return m, nil
+}
+
+// flatYaks returns the currently visible yaks (for fuzzy find over the open tree).
+func (m Model) flatYaks() []yaks.Yak {
+	ys := make([]yaks.Yak, 0, len(m.rows))
+	for _, r := range m.rows {
+		ys = append(ys, *r.Yak)
+	}
+	return ys
+}
+
+type jumpMsg struct{ id string }
+
+func (m Model) findCmd() tea.Cmd {
+	lines := shell.FzfLines(m.flatYaks())
+	return func() tea.Msg {
+		if !shell.Available() {
+			return errMsg{fmt.Errorf("fuzzy find needs `fzf` installed")}
+		}
+		id, err := shell.Pick(lines)
+		if err != nil {
+			return errMsg{err}
+		}
+		return jumpMsg{id}
+	}
 }
 
 // current returns the expansion value for id, defaulting to true.
