@@ -60,6 +60,24 @@ func TestDetailMarkdownNoContext(t *testing.T) {
 	}
 }
 
+func TestViewTooSmall(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m.width, m.height = 10, 3
+	m.layout()
+	out := m.View()
+	if !contains(out, "too small") {
+		t.Fatalf("expected resize hint, got:\n%s", out)
+	}
+}
+
+func TestViewEmptyRepo(t *testing.T) {
+	m := loaded(t, []yaks.Yak{})
+	out := m.View()
+	if !contains(out, "No yaks yet") {
+		t.Fatalf("expected empty-state hint, got:\n%s", out)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (indexOf(s, sub) >= 0)
 }

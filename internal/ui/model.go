@@ -254,6 +254,14 @@ func (m Model) View() string {
 	if !m.ready {
 		return "loading…"
 	}
+	const minW, minH = 40, 8
+	if m.width < minW || m.height < minH {
+		return subtle.Render("Terminal too small — please resize (need at least 40×8).")
+	}
+	if len(m.rows) == 0 {
+		msg := "No yaks yet.\n\nStart one with:  yx add \"my first yak\"\n\n(v1.1 will let you add them right here.)\n\nq to quit · r to reload"
+		return subtle.Render(msg)
+	}
 	// Graceful guards added in Task 15; basic two-pane here.
 	bodyHeight := m.height - 2
 	treeWidth := m.width*4/10 - 2
