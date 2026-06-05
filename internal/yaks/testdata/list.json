@@ -1,0 +1,64 @@
+[
+  {
+    "name": "deploy app",
+    "full_path": "deploy app",
+    "id": "deploy-app-6c6r",
+    "state": "wip",
+    "context": null,
+    "parent_id": null,
+    "fields": {},
+    "tags": [],
+    "depth": 0,
+    "connector": "",
+    "prefix": "",
+    "children": [
+      {
+        "name": "set up CI",
+        "full_path": "deploy app/set up CI",
+        "id": "set-up-ci-radu",
+        "state": "blocked",
+        "context": null,
+        "parent_id": "deploy-app-6c6r",
+        "fields": {},
+        "tags": [],
+        "depth": 1,
+        "connector": "├─ ",
+        "prefix": "",
+        "children": [
+          {
+            "name": "fix linter",
+            "full_path": "deploy app/set up CI/fix linter",
+            "id": "fix-linter-dq8z",
+            "state": "todo",
+            "context": null,
+            "parent_id": "set-up-ci-radu",
+            "fields": {},
+            "tags": [],
+            "depth": 2,
+            "connector": "╰─ ",
+            "prefix": "│  ",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "write tests",
+        "full_path": "deploy app/write tests",
+        "id": "write-tests-hgny",
+        "state": "wip",
+        "context": "This is the **context** body.\n\n- one\n- two\n",
+        "parent_id": "deploy-app-6c6r",
+        "fields": {
+          "plan": "Step 1: do thing\nStep 2: profit"
+        },
+        "tags": [
+          "@bug"
+        ],
+        "depth": 1,
+        "connector": "╰─ ",
+        "prefix": "",
+        "children": []
+      }
+    ]
+  }
+]
