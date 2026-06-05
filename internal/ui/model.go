@@ -119,9 +119,60 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = !m.showHelp
+		m.help.ShowAll = m.showHelp
+		return m, nil
+	case key.Matches(msg, m.keys.Focus):
+		if m.focus == focusTree {
+			m.focus = focusDetail
+		} else {
+			m.focus = focusTree
+		}
 		return m, nil
 	}
+
+	// Detail focus: forward scrolling keys to the viewport.
+	if m.focus == focusDetail {
+		var cmd tea.Cmd
+		m.detail, cmd = m.detail.Update(msg)
+		return m, cmd
+	}
+
+	// Tree focus: navigation and folding.
+	switch {
+	case key.Matches(msg, m.keys.Down):
+		m.cursor = tree.ClampCursor(m.cursor+1, len(m.rows))
+		m.refreshDetail()
+	case key.Matches(msg, m.keys.Up):
+		m.cursor = tree.ClampCursor(m.cursor-1, len(m.rows))
+		m.refreshDetail()
+	case key.Matches(msg, m.keys.Collapse):
+		if id := m.selectedID(); id != "" {
+			m.expanded[id] = false
+			m.rebuildRows()
+			m.refreshDetail()
+		}
+	case key.Matches(msg, m.keys.Expand):
+		if id := m.selectedID(); id != "" {
+			m.expanded[id] = true
+			m.rebuildRows()
+			m.refreshDetail()
+		}
+	case key.Matches(msg, m.keys.Toggle):
+		if id := m.selectedID(); id != "" {
+			m.expanded[id] = !current(m.expanded, id)
+			m.rebuildRows()
+			m.refreshDetail()
+		}
+	}
 	return m, nil
+}
+
+// current returns the expansion value for id, defaulting to true.
+func current(exp map[string]bool, id string) bool {
+	if v, ok := exp[id]; ok {
+		return v
+	}
+	return true
 }
 
 func (m *Model) layout() {
