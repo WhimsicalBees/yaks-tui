@@ -68,3 +68,18 @@ func (c *Client) SetState(ctx context.Context, id, state string) error {
 	_, err := c.r.Run(ctx, "state", id, state)
 	return err
 }
+
+// BinaryAvailable reports whether `yx` is on PATH.
+func BinaryAvailable() (string, error) {
+	return exec.LookPath("yx")
+}
+
+// RepoInitialized returns true if `yx list` works in the current dir. Any error
+// (no repo, not gitignored, etc.) returns false plus the error for messaging.
+func (c *Client) RepoInitialized(ctx context.Context) (bool, error) {
+	_, err := c.r.Run(ctx, "list", "--format", "json")
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

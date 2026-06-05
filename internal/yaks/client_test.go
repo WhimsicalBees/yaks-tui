@@ -72,3 +72,35 @@ func TestClientSetStateRejectsBadState(t *testing.T) {
 		t.Fatal("should not have called yx for invalid state")
 	}
 }
+
+func TestBinaryAvailable(t *testing.T) {
+	// LookPath-based; just assert the helper exists and returns a bool+err shape.
+	_, err := BinaryAvailable()
+	_ = err // may be nil or not depending on environment; we only test it runs
+}
+
+func TestRepoInitializedTrueWhenListSucceeds(t *testing.T) {
+	fr := &fakeRunner{out: []byte("[]")}
+	c := NewClient(fr)
+	ok, err := c.RepoInitialized(context.Background())
+	if err != nil {
+		t.Fatalf("RepoInitialized: %v", err)
+	}
+	if !ok {
+		t.Fatal("want initialized=true when list succeeds")
+	}
+}
+
+func TestRepoInitializedFalseOnGitignoreError(t *testing.T) {
+	fr := &fakeRunner{err: errString(".yaks is not gitignored. Fix with: echo '.yaks' >> .gitignore")}
+	c := NewClient(fr)
+	ok, _ := c.RepoInitialized(context.Background())
+	if ok {
+		t.Fatal("want initialized=false when yx errors")
+	}
+}
+
+// errString is a tiny helper to make an error from a string.
+type errString string
+
+func (e errString) Error() string { return string(e) }
