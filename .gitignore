@@ -1,2 +1,6 @@
 .superpowers/
 .yaks/
+
+# Go build artifacts
+/yaks-tui
+/bin/
