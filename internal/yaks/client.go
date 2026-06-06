@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
 // Runner executes a `yx` invocation and returns its stdout. Behind an interface
@@ -22,11 +23,13 @@ func (ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	if err != nil {
 		// Surface stderr from yx so callers can show a useful message. Fall back
 		// to wrapping the error itself when stderr is empty, so the exit status
-		// isn't lost and the message is never blank.
+		// isn't lost and the message is never blank. The args are joined into a
+		// readable command (e.g. "yx list --format json") rather than a Go slice.
+		cmdline := "yx " + strings.Join(args, " ")
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return nil, fmt.Errorf("yx %v: %s", args, string(ee.Stderr))
+			return nil, fmt.Errorf("%s: %s", cmdline, strings.TrimSpace(string(ee.Stderr)))
 		}
-		return nil, fmt.Errorf("yx %v: %w", args, err)
+		return nil, fmt.Errorf("%s: %w", cmdline, err)
 	}
 	return out, nil
 }
