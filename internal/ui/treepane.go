@@ -2,11 +2,18 @@ package ui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 // renderTree draws the visible rows into a box of the given inner size.
+//
+// Truncation runs on PLAIN text only — never on a string that already carries
+// ANSI escapes. Styling (the colored state dot, the selected-row highlight) is
+// applied afterward. Truncating styled text would both miscount width (escape
+// bytes consume the budget) and risk slicing off a reset code, leaking the
+// highlight onto following cells.
 func (m Model) renderTree(width, height int) string {
 	var b strings.Builder
 	start, end := windowBounds(m.cursor, len(m.rows), height)
@@ -21,12 +28,21 @@ func (m Model) renderTree(width, height int) string {
 				fold = "▸"
 			}
 		}
+		// The fixed prefix (indent, fold glyph, dot, surrounding spaces) is plain;
+		// only the name is variable-length, so we truncate the name to whatever
+		// width remains after the prefix.
+		prefix := indent + fold + " " + stateDot(row.Yak.State) + " "
+		avail := width - utf8.RuneCountInString(prefix)
+		name := truncate(row.Yak.Name, avail)
+
+		// Style after truncation: color the dot, then highlight the whole row if
+		// it's the cursor. The assembled visible width is already <= width.
 		dot := lipgloss.NewStyle().Foreground(stateColor(row.Yak.State)).Render(stateDot(row.Yak.State))
-		line := indent + fold + " " + dot + " " + row.Yak.Name
+		line := indent + fold + " " + dot + " " + name
 		if i == m.cursor {
 			line = selectedRow.Render(line)
 		}
-		b.WriteString(truncate(line, width))
+		b.WriteString(line)
 		b.WriteString("\n")
 	}
 	return b.String()

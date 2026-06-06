@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"yaks-tui/internal/yaks"
 )
@@ -75,6 +79,52 @@ func TestViewEmptyRepo(t *testing.T) {
 	out := m.View()
 	if !contains(out, "No yaks yet") {
 		t.Fatalf("expected empty-state hint, got:\n%s", out)
+	}
+}
+
+// TestRenderTreeCursorRowAnsiSafe guards against truncating an already-styled
+// row: when the selected yak's name overflows the pane width, the highlighted
+// row must still be valid ANSI (every escape sequence terminated, ending in a
+// reset) so the highlight doesn't bleed onto following cells. This only
+// manifests under a real color profile, so we force one for the test.
+func TestRenderTreeCursorRowAnsiSafe(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(prev)
+
+	long := strings.Repeat("verylongname", 10) // far wider than the pane
+	roots := []yaks.Yak{{ID: "a", Name: long, State: yaks.StateWip}}
+	m := loaded(t, roots)
+
+	out := m.renderTree(20, 5)
+	// The styled output must end its (single) content line with a reset before
+	// the newline — i.e. no dangling open style. lipgloss uses "\x1b[0m".
+	trimmed := strings.TrimRight(out, "\n")
+	if strings.Contains(trimmed, "\x1b[") && !strings.HasSuffix(trimmed, "\x1b[0m") {
+		t.Fatalf("cursor row not reset-terminated (highlight would bleed):\n%q", out)
+	}
+}
+
+func TestBreadcrumb(t *testing.T) {
+	cases := map[string]string{
+		"deploy app":                      "", // root → no breadcrumb
+		"deploy app/set up CI":            "deploy app",
+		"deploy app/set up CI/fix linter": "deploy app/set up CI",
+		"":                                "",
+	}
+	for in, want := range cases {
+		if got := breadcrumb(in); got != want {
+			t.Errorf("breadcrumb(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDetailMarkdownShowsBreadcrumb(t *testing.T) {
+	y := yaks.Yak{ID: "c", Name: "fix linter", State: "todo",
+		FullPath: "deploy app/set up CI/fix linter"}
+	md := detailMarkdown(y)
+	if !contains(md, "deploy app/set up CI") {
+		t.Errorf("detail md missing breadcrumb:\n%s", md)
 	}
 }
 

@@ -13,6 +13,11 @@ import (
 // detailMarkdown builds the markdown source shown in the detail pane for a yak.
 func detailMarkdown(y yaks.Yak) string {
 	var b strings.Builder
+	// Breadcrumb: the ancestor path, derived from FullPath by dropping the yak's
+	// own (last) segment. Shown only when the yak has a parent.
+	if crumb := breadcrumb(y.FullPath); crumb != "" {
+		fmt.Fprintf(&b, "%s\n\n", crumb)
+	}
 	fmt.Fprintf(&b, "# %s\n\n", y.Name)
 	fmt.Fprintf(&b, "`%s`", y.State)
 	if len(y.Tags) > 0 {
@@ -39,6 +44,17 @@ func detailMarkdown(y yaks.Yak) string {
 		}
 	}
 	return b.String()
+}
+
+// breadcrumb returns the ancestor path for a yak's full_path (everything before
+// the final "/"-separated segment), or "" if the yak is a root. yaks joins path
+// segments with "/", e.g. "deploy app/set up CI/fix linter" → "deploy app/set up CI".
+func breadcrumb(fullPath string) string {
+	i := strings.LastIndex(fullPath, "/")
+	if i < 0 {
+		return ""
+	}
+	return fullPath[:i]
 }
 
 // renderMarkdown styles markdown with glamour; on failure returns the raw source
