@@ -109,26 +109,3 @@ func FzfExec(lines []string) (cmd *exec.Cmd, outPath string, cleanup func(), err
 	cmd = exec.Command("sh", "-c", fzfShellCommand(listPath, outPath))
 	return cmd, outPath, cleanup, nil
 }
-
-// Pick runs fzf over the given lines and returns the selected id, or "" if the
-// user cancelled. Returns an error only for unexpected failures (not cancel).
-//
-// Deprecated: Pick uses inherited stdio with cmd.Output(), which does not work
-// while Bubble Tea owns the terminal. The TUI uses FzfExec via tea.ExecProcess
-// instead. Retained for tests and non-TUI callers.
-func Pick(lines []string) (string, error) {
-	if !Available() {
-		return "", fmt.Errorf("fzf not installed")
-	}
-	cmd := exec.Command("fzf", "--with-nth=1", "--delimiter="+fzfSep, "--prompt=yak> ")
-	cmd.Stdin = strings.NewReader(strings.Join(lines, "\n"))
-	out, err := cmd.Output()
-	if err != nil {
-		// fzf exits 130 on cancel — treat as no selection, not an error.
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 130 {
-			return "", nil
-		}
-		return "", err
-	}
-	return ParseFzfSelection(string(out)), nil
-}
