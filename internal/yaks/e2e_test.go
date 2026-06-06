@@ -2,10 +2,12 @@ package yaks
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,7 +58,10 @@ func TestE2E_ListAndSetState(t *testing.T) {
 	if err := c.SetState(context.Background(), id, StateWip); err != nil {
 		t.Fatalf("SetState: %v", err)
 	}
-	roots, _ = c.List(context.Background())
+	roots, err = c.List(context.Background())
+	if err != nil {
+		t.Fatalf("List after SetState: %v", err)
+	}
 	if roots[0].State != StateWip {
 		t.Fatalf("state = %q, want wip", roots[0].State)
 	}
@@ -71,16 +76,9 @@ func (d dirRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			return nil, &exitErr{args, string(ee.Stderr)}
+			return nil, fmt.Errorf("yx %s: %s", strings.Join(args, " "), strings.TrimSpace(string(ee.Stderr)))
 		}
 		return nil, err
 	}
 	return out, nil
 }
-
-type exitErr struct {
-	args []string
-	msg  string
-}
-
-func (e *exitErr) Error() string { return e.msg }
