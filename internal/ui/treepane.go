@@ -52,7 +52,9 @@ func windowBounds(cursor, n, height int) (int, int) {
 	return start, end
 }
 
-// truncate hard-cuts a string to max display width (rune-naive; fine for ASCII names).
+// truncate hard-cuts a string to max runes, appending an ellipsis when it cuts.
+// It slices on rune boundaries (not bytes); display-width of wide runes (CJK) is
+// not accounted for, which is fine for yak names.
 func truncate(s string, max int) string {
 	if max <= 0 {
 		return ""
