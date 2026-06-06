@@ -128,6 +128,29 @@ func TestDetailMarkdownShowsBreadcrumb(t *testing.T) {
 	}
 }
 
+// TestResolveMarkdownStyle pins the style selection that lets us avoid glamour's
+// WithAutoStyle — which queries the terminal background by reading stdin and, in
+// the render loop, races Bubble Tea's input reader (the input-lag bug). The
+// terminal-vs-dark detection is done once at startup and passed in here as plain
+// booleans, so this mapping never touches the terminal.
+func TestResolveMarkdownStyle(t *testing.T) {
+	cases := []struct {
+		isTerminal, dark bool
+		want             string
+	}{
+		{false, false, "notty"},
+		{false, true, "notty"}, // not a terminal: dark is irrelevant
+		{true, true, "dark"},
+		{true, false, "light"},
+	}
+	for _, c := range cases {
+		if got := resolveMarkdownStyle(c.isTerminal, c.dark); got != c.want {
+			t.Errorf("resolveMarkdownStyle(term=%v, dark=%v) = %q, want %q",
+				c.isTerminal, c.dark, got, c.want)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (indexOf(s, sub) >= 0)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 
 	"yaks-tui/internal/shell"
 	"yaks-tui/internal/tree"
@@ -57,14 +58,25 @@ type Model struct {
 	status   string // transient message (errors etc.)
 	showHelp bool
 	ready    bool
+	mdStyle  string // glamour style name, resolved once at startup (see New)
 }
 
 func New(client dataSource) Model {
+	// Resolve the markdown style ONCE, here, before tea.NewProgram takes over
+	// stdin. Detecting the terminal background (a stdin read) is safe at this
+	// point because no event loop is competing for input; doing it later in the
+	// render loop would steal the user's keystrokes. See resolveMarkdownStyle.
+	isTTY := term.IsTerminal(int(os.Stdout.Fd()))
+	dark := false
+	if isTTY {
+		dark = lipgloss.HasDarkBackground()
+	}
 	return Model{
 		client:   client,
 		keys:     defaultKeys(),
 		help:     help.New(),
 		expanded: map[string]bool{},
+		mdStyle:  resolveMarkdownStyle(isTTY, dark),
 	}
 }
 
@@ -291,7 +303,7 @@ func (m *Model) refreshDetail() {
 		return
 	}
 	y := *m.rows[m.cursor].Yak
-	m.detail.SetContent(renderMarkdown(detailMarkdown(y), m.detail.Width))
+	m.detail.SetContent(renderMarkdown(detailMarkdown(y), m.mdStyle, m.detail.Width))
 }
 
 func (m Model) setStateCmd(state string) tea.Cmd {

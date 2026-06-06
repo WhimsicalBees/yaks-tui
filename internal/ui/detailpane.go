@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
 
 	"yaks-tui/internal/yaks"
 )
@@ -57,14 +58,34 @@ func breadcrumb(fullPath string) string {
 	return fullPath[:i]
 }
 
-// renderMarkdown styles markdown with glamour; on failure returns the raw source
-// (graceful degradation per spec).
-func renderMarkdown(md string, width int) string {
+// resolveMarkdownStyle picks a glamour style NAME without touching the terminal.
+//
+// glamour's WithAutoStyle resolves the style by calling termenv.HasDarkBackground,
+// which writes an OSC query to the terminal and reads the response back from the
+// TTY (blocking up to 5s). Done in the render loop — as it was, on every cursor
+// move — that read races Bubble Tea's input reader for stdin and swallows the
+// user's keystrokes, so keys need many presses to register. We instead detect
+// (is-terminal, is-dark) ONCE at startup, before the event loop owns stdin, and
+// pass the result here as plain booleans so this selection never does I/O.
+func resolveMarkdownStyle(isTerminal, dark bool) string {
+	if !isTerminal {
+		return styles.NoTTYStyle
+	}
+	if dark {
+		return styles.DarkStyle
+	}
+	return styles.LightStyle
+}
+
+// renderMarkdown styles markdown with glamour using an explicit, pre-resolved
+// style (never WithAutoStyle — see resolveMarkdownStyle). On failure it returns
+// the raw source (graceful degradation per spec).
+func renderMarkdown(md, style string, width int) string {
 	if width < 10 {
 		width = 10
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle(style),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
