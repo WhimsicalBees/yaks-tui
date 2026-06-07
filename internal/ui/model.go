@@ -355,6 +355,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.search.SetValue("")
 		m.search.Focus()
 		return m, nil
+	case msg.Type == tea.KeyEsc:
+		if m.hideDone || m.wipFocus || m.query != "" {
+			id := m.selectedID()
+			m.hideDone = false
+			m.wipFocus = false
+			m.query = ""
+			m.search.SetValue("")
+			m.rebuildRows()
+			m.restoreCursor(id)
+			m.refreshDetail()
+		}
 	}
 	return m, nil
 }
@@ -584,9 +595,5 @@ func (m Model) filterIndicator() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	hint := "H/W toggle filters"
-	if m.query != "" {
-		hint = "esc clears search · H/W toggle filters"
-	}
-	return strings.Join(parts, " ") + "  ·  " + hint
+	return strings.Join(parts, " ") + "  ·  esc clears · H/W toggle · f search"
 }

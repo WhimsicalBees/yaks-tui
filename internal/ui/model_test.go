@@ -515,3 +515,98 @@ func TestCollapseExpand(t *testing.T) {
 		t.Fatalf("after collapse want 1 row, got %d", len(m2.(Model).rows))
 	}
 }
+
+func TestEscClearsActiveFilters(t *testing.T) {
+	// Enable both H and W, then press esc — all filters should clear and full
+	// tree should be restored.
+	m := loaded(t, parentWithStates())
+	fullLen := len(m.rows) // 3: p, c, z
+
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
+	mm := m3.(Model)
+	if !mm.hideDone || !mm.wipFocus {
+		t.Fatalf("precondition: hideDone=%v wipFocus=%v, want both true", mm.hideDone, mm.wipFocus)
+	}
+	if len(mm.rows) >= fullLen {
+		t.Fatalf("precondition: filters should reduce rows, got %d", len(mm.rows))
+	}
+
+	m4, _ := mm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result := m4.(Model)
+	if result.hideDone {
+		t.Fatal("esc should clear hideDone")
+	}
+	if result.wipFocus {
+		t.Fatal("esc should clear wipFocus")
+	}
+	if result.query != "" {
+		t.Fatalf("esc should clear query, got %q", result.query)
+	}
+	if len(result.rows) != fullLen {
+		t.Fatalf("esc should restore full tree: got %d rows, want %d", len(result.rows), fullLen)
+	}
+}
+
+func TestEscClearsCommittedSearch(t *testing.T) {
+	// Enter search, type a query, commit with enter (searching=false, query set),
+	// then press esc in normal mode — query should clear and full tree restored.
+	m := loaded(t, searchYaks()) // 3 yaks: a, b, c
+
+	// Enter search mode, type "billing", commit.
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m3 := m2
+	for _, r := range "billing" {
+		m3, _ = m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := m4.(Model)
+	if mm.searching {
+		t.Fatal("precondition: enter should exit search input mode")
+	}
+	if mm.query != "billing" {
+		t.Fatalf("precondition: query = %q, want billing", mm.query)
+	}
+	if len(mm.rows) != 1 {
+		t.Fatalf("precondition: committed search should filter rows, got %d", len(mm.rows))
+	}
+
+	// Now press esc in normal (non-searching) mode.
+	m5, _ := mm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result := m5.(Model)
+	if result.query != "" {
+		t.Fatalf("esc should clear committed query, got %q", result.query)
+	}
+	if result.searching {
+		t.Fatal("esc should not re-enter search mode")
+	}
+	if len(result.rows) != 3 {
+		t.Fatalf("esc should restore full tree: got %d rows, want 3", len(result.rows))
+	}
+}
+
+func TestWipFocusComposesWithSearch(t *testing.T) {
+	// Tree: two wip yaks (one matches "auth", one doesn't), one todo that matches
+	// "auth". W + search "auth" should show only the wip yak whose name contains
+	// "auth", plus any ancestor (there are none here — all are top-level).
+	roots := []yaks.Yak{
+		{ID: "a", Name: "auth setup", State: "wip"},   // wip + matches
+		{ID: "b", Name: "billing", State: "wip"},      // wip but no match
+		{ID: "c", Name: "auth review", State: "todo"}, // matches but not wip
+	}
+	m := loaded(t, roots)
+
+	// Enable wip focus.
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
+	// Enter search mode and type "auth".
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m4 := m3
+	for _, r := range "auth" {
+		m4, _ = m4.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	got := rowIDset(m4.(Model))
+	// Only "a" is both wip and matches "auth".
+	if len(got) != 1 || got[0] != "a" {
+		t.Fatalf("wipFocus+search 'auth' rows = %v, want [a]", got)
+	}
+}
