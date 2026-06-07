@@ -584,5 +584,9 @@ func (m Model) filterIndicator() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return strings.Join(parts, " ") + "  ·  H/W toggle · f search · esc clears search"
+	hint := "H/W toggle filters"
+	if m.query != "" {
+		hint = "esc clears search · H/W toggle filters"
+	}
+	return strings.Join(parts, " ") + "  ·  " + hint
 }

@@ -483,6 +483,25 @@ func TestSearchComposesWithHideDone(t *testing.T) {
 	}
 }
 
+func TestViewEmptyWhenFilteredOut(t *testing.T) {
+	// All yaks are done; pressing H (hideDone) should leave an empty filtered
+	// view, which must render "No yaks match" — not the empty-repo message.
+	roots := []yaks.Yak{{ID: "x", Name: "done thing", State: "done"}}
+	m := loaded(t, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	mm := m2.(Model)
+	if len(mm.rows) != 0 {
+		t.Fatalf("precondition: expected 0 visible rows after hideDone, got %d", len(mm.rows))
+	}
+	out := mm.View()
+	if !contains(out, "No yaks match the current view") {
+		t.Fatalf("expected filtered-empty message, got:\n%s", out)
+	}
+	if contains(out, "No yaks yet") {
+		t.Fatalf("must not show empty-repo message when filters are active, got:\n%s", out)
+	}
+}
+
 func TestCollapseExpand(t *testing.T) {
 	roots := []yaks.Yak{{ID: "p", Name: "parent", State: "todo",
 		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}}}}
