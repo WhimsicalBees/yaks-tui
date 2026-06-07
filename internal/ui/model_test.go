@@ -309,6 +309,81 @@ func TestEditKeysReachTextareaNotTriage(t *testing.T) {
 	}
 }
 
+func parentWithStates() []yaks.Yak {
+	// done parent with a wip child, and a standalone done leaf.
+	return []yaks.Yak{
+		{ID: "p", Name: "parent", State: "done", Children: []yaks.Yak{
+			{ID: "c", Name: "child", State: "wip"},
+		}},
+		{ID: "z", Name: "zeta", State: "done"},
+	}
+}
+
+func rowIDset(m Model) []string {
+	ids := make([]string, len(m.rows))
+	for i, r := range m.rows {
+		ids[i] = r.Yak.ID
+	}
+	return ids
+}
+
+func TestHideDoneKeepsDoneAncestorOfActiveChild(t *testing.T) {
+	m := loaded(t, parentWithStates())
+	// Press capital H.
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	mm := m2.(Model)
+	if !mm.hideDone {
+		t.Fatal("H should enable hideDone")
+	}
+	// parent (done) stays because child (wip) is active; zeta (done leaf) gone.
+	got := rowIDset(mm)
+	if len(got) != 2 || got[0] != "p" || got[1] != "c" {
+		t.Fatalf("hideDone rows = %v, want [p c]", got)
+	}
+}
+
+func TestHideDoneTogglesOff(t *testing.T) {
+	m := loaded(t, parentWithStates())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	mm := m3.(Model)
+	if mm.hideDone {
+		t.Fatal("second H should disable hideDone")
+	}
+	if len(mm.rows) != 3 {
+		t.Fatalf("after toggle off, rows = %d, want 3", len(mm.rows))
+	}
+}
+
+func TestWipFocusShowsOnlyActivePlusAncestors(t *testing.T) {
+	m := loaded(t, parentWithStates())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
+	mm := m2.(Model)
+	if !mm.wipFocus {
+		t.Fatal("W should enable wipFocus")
+	}
+	got := rowIDset(mm)
+	if len(got) != 2 || got[0] != "p" || got[1] != "c" {
+		t.Fatalf("wipFocus rows = %v, want [p c] (parent kept as ancestor of wip child)", got)
+	}
+}
+
+func TestFilterCursorReresolvesWhenSelectedHidden(t *testing.T) {
+	// Cursor on the done leaf "z"; hideDone hides it; cursor must land on a valid row.
+	m := loaded(t, parentWithStates())
+	// move cursor down to "z" (index 2: p,c,z)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m3.(Model).selectedID() != "z" {
+		t.Fatalf("precondition: selected = %q, want z", m3.(Model).selectedID())
+	}
+	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	mm := m4.(Model)
+	if mm.cursor < 0 || mm.cursor >= len(mm.rows) {
+		t.Fatalf("cursor %d out of bounds for %d rows", mm.cursor, len(mm.rows))
+	}
+}
+
 func TestCollapseExpand(t *testing.T) {
 	roots := []yaks.Yak{{ID: "p", Name: "parent", State: "todo",
 		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}}}}

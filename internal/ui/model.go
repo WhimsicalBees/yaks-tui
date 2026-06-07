@@ -66,6 +66,9 @@ type Model struct {
 	editing bool           // true while the inline context editor is open
 	editID  string         // id of the yak being edited (captured on entry)
 	ta      textarea.Model // inline editor for the context body
+
+	hideDone bool // H: hide done yaks (done subtrees with no active descendant)
+	wipFocus bool // W: show only wip/blocked yaks (+ ancestors)
 }
 
 func New(client dataSource) Model {
@@ -106,8 +109,28 @@ func (m Model) loadCmd() tea.Cmd {
 }
 
 func (m *Model) rebuildRows() {
-	m.rows = tree.Flatten(m.roots, m.expanded)
+	m.rows = tree.FlattenFiltered(m.roots, m.expanded, m.filterPredicate())
 	m.cursor = tree.ClampCursor(m.cursor, len(m.rows))
+}
+
+// filterPredicate ANDs the active view filters into one predicate, or returns
+// nil when no filter is active (nil = show everything). Text search is folded
+// in here in Task 3.
+func (m Model) filterPredicate() tree.Predicate {
+	hideDone := m.hideDone
+	wipFocus := m.wipFocus
+	if !hideDone && !wipFocus {
+		return nil
+	}
+	return func(y *yaks.Yak) bool {
+		if hideDone && y.State == yaks.StateDone {
+			return false
+		}
+		if wipFocus && y.State != yaks.StateWip && y.State != yaks.StateBlocked {
+			return false
+		}
+		return true
+	}
 }
 
 func (m Model) selectedID() string {
@@ -115,6 +138,20 @@ func (m Model) selectedID() string {
 		return m.rows[m.cursor].Yak.ID
 	}
 	return ""
+}
+
+// restoreCursor puts the cursor back on the yak with the given id if it's still
+// visible; otherwise leaves it clamped to a valid row (rebuildRows already
+// clamped). Used after a filter change so the selection follows the yak.
+func (m *Model) restoreCursor(id string) {
+	if id == "" {
+		return
+	}
+	if idx := tree.IndexOfID(m.rows, id); idx >= 0 {
+		m.cursor = idx
+	} else {
+		m.cursor = tree.ClampCursor(m.cursor, len(m.rows))
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -251,6 +288,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.findCmd()
 	case key.Matches(msg, m.keys.Edit):
 		return m.enterEdit()
+	case key.Matches(msg, m.keys.HideDone):
+		id := m.selectedID()
+		m.hideDone = !m.hideDone
+		m.rebuildRows()
+		m.restoreCursor(id)
+		m.refreshDetail()
+	case key.Matches(msg, m.keys.WipFocus):
+		id := m.selectedID()
+		m.wipFocus = !m.wipFocus
+		m.rebuildRows()
+		m.restoreCursor(id)
+		m.refreshDetail()
 	}
 	return m, nil
 }
