@@ -4,3 +4,5 @@
 # Go build artifacts
 /yaks-tui
 /bin/
+
+.claude/settings.local.json

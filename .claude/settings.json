@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go *)",
+      "Bash(git *)",
+      "Bash(gofmt *)",
+      "Bash(make *)",
+      "Bash(yx *)",
+      "Bash(staticcheck ./...)"
+    ]
+  }
+}
