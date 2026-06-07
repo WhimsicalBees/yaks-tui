@@ -382,6 +382,9 @@ func TestFilterCursorReresolvesWhenSelectedHidden(t *testing.T) {
 	if mm.cursor < 0 || mm.cursor >= len(mm.rows) {
 		t.Fatalf("cursor %d out of bounds for %d rows", mm.cursor, len(mm.rows))
 	}
+	if mm.selectedID() != "c" {
+		t.Fatalf("cursor should land on a visible yak (c), got %q", mm.selectedID())
+	}
 }
 
 func TestCollapseExpand(t *testing.T) {

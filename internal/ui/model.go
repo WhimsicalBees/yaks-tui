@@ -114,8 +114,7 @@ func (m *Model) rebuildRows() {
 }
 
 // filterPredicate ANDs the active view filters into one predicate, or returns
-// nil when no filter is active (nil = show everything). Text search is folded
-// in here in Task 3.
+// nil when no filter is active (nil = show everything).
 func (m Model) filterPredicate() tree.Predicate {
 	hideDone := m.hideDone
 	wipFocus := m.wipFocus
@@ -141,16 +140,14 @@ func (m Model) selectedID() string {
 }
 
 // restoreCursor puts the cursor back on the yak with the given id if it's still
-// visible; otherwise leaves it clamped to a valid row (rebuildRows already
-// clamped). Used after a filter change so the selection follows the yak.
+// visible. rebuildRows has already clamped the cursor to a valid row, so when
+// the yak is gone we simply leave that clamped position.
 func (m *Model) restoreCursor(id string) {
 	if id == "" {
 		return
 	}
 	if idx := tree.IndexOfID(m.rows, id); idx >= 0 {
 		m.cursor = idx
-	} else {
-		m.cursor = tree.ClampCursor(m.cursor, len(m.rows))
 	}
 }
 
