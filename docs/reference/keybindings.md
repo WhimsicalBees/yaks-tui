@@ -30,7 +30,8 @@ narrows live as you type. Press `enter` to keep the filter applied after closing
 the input; press `esc` to clear the search and restore the full tree.
 
 The filters compose: `H`, `W`, and `f` can all be active at the same time. The
-status bar shows which filters are currently on.
+status bar shows which filters are currently on. When any are active, `esc` (in
+normal mode) clears them all at once.
 
 ## While editing context
 

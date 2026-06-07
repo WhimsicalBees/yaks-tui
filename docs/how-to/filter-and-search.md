@@ -24,3 +24,8 @@ Press `f` and type — the tree narrows to yaks whose name contains what you typ
 
 The filters and search stack: with `H` on and a search active, you see only
 matching, non-done yaks. The status bar shows which filters are active.
+
+## Clear everything at once
+
+When any filter or search is active, press `esc` to clear them all (`H`, `W`,
+and a committed search) and restore the full tree in one step.
