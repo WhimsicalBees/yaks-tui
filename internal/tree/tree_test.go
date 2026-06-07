@@ -74,3 +74,106 @@ func TestClampCursor(t *testing.T) {
 		t.Errorf("ClampCursor on empty = %d, want 0", got)
 	}
 }
+
+func statePred(state string) Predicate {
+	return func(y *yaks.Yak) bool { return y.State == state }
+}
+
+func TestFlattenFilteredNilPredicateMatchesFlatten(t *testing.T) {
+	roots := []yaks.Yak{
+		{ID: "a", Name: "alpha", State: "todo", Children: []yaks.Yak{
+			{ID: "b", Name: "beta", State: "wip"},
+		}},
+		{ID: "c", Name: "gamma", State: "done"},
+	}
+	exp := map[string]bool{}
+	got := FlattenFiltered(roots, exp, nil)
+	want := Flatten(roots, exp)
+	if len(got) != len(want) {
+		t.Fatalf("nil predicate: got %d rows, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Yak.ID != want[i].Yak.ID || got[i].Depth != want[i].Depth {
+			t.Fatalf("row %d: got %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestFlattenFilteredLeafMatchKeepsAncestors(t *testing.T) {
+	// Only "b" (wip) matches. Its parent "a" (todo) must stay so the match is
+	// reachable; unrelated root "c" (done) must be hidden.
+	roots := []yaks.Yak{
+		{ID: "a", Name: "alpha", State: "todo", Children: []yaks.Yak{
+			{ID: "b", Name: "beta", State: "wip"},
+			{ID: "d", Name: "delta", State: "done"},
+		}},
+		{ID: "c", Name: "gamma", State: "done"},
+	}
+	got := FlattenFiltered(roots, map[string]bool{}, statePred("wip"))
+	ids := rowIDs(got)
+	want := []string{"a", "b"}
+	if !equalStrings(ids, want) {
+		t.Fatalf("got ids %v, want %v", ids, want)
+	}
+}
+
+func TestFlattenFilteredDeepDescendantKeepsFullChain(t *testing.T) {
+	// Match is two levels deep; the whole chain a→b→c stays.
+	roots := []yaks.Yak{
+		{ID: "a", Name: "a", State: "done", Children: []yaks.Yak{
+			{ID: "b", Name: "b", State: "done", Children: []yaks.Yak{
+				{ID: "c", Name: "c", State: "wip"},
+			}},
+		}},
+	}
+	got := FlattenFiltered(roots, map[string]bool{}, statePred("wip"))
+	if !equalStrings(rowIDs(got), []string{"a", "b", "c"}) {
+		t.Fatalf("got ids %v, want [a b c]", rowIDs(got))
+	}
+}
+
+func TestFlattenFilteredNoMatchIsEmpty(t *testing.T) {
+	roots := []yaks.Yak{
+		{ID: "a", Name: "a", State: "todo"},
+		{ID: "b", Name: "b", State: "done"},
+	}
+	got := FlattenFiltered(roots, map[string]bool{}, statePred("wip"))
+	if len(got) != 0 {
+		t.Fatalf("got %d rows, want 0", len(got))
+	}
+}
+
+func TestFlattenFilteredCollapsedAncestorHidesDescendant(t *testing.T) {
+	// "a" matches on its own, but is collapsed, so its matching child "b" is not
+	// emitted (fold wins for display).
+	roots := []yaks.Yak{
+		{ID: "a", Name: "a", State: "wip", Children: []yaks.Yak{
+			{ID: "b", Name: "b", State: "wip"},
+		}},
+	}
+	got := FlattenFiltered(roots, map[string]bool{"a": false}, statePred("wip"))
+	if !equalStrings(rowIDs(got), []string{"a"}) {
+		t.Fatalf("got ids %v, want [a] (b hidden by collapse)", rowIDs(got))
+	}
+}
+
+// helpers
+func rowIDs(rows []Row) []string {
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.Yak.ID
+	}
+	return ids
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
