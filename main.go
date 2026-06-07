@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"yaks-tui/internal/ui"
-	"yaks-tui/internal/yaks"
+	"github.com/WhimsicalBees/yaks-tui/internal/ui"
+	"github.com/WhimsicalBees/yaks-tui/internal/yaks"
 )
 
 func main() {

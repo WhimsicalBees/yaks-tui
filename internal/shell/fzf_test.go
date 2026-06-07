@@ -3,7 +3,7 @@ package shell
 import (
 	"testing"
 
-	"yaks-tui/internal/yaks"
+	"github.com/WhimsicalBees/yaks-tui/internal/yaks"
 )
 
 func TestFzfLinesAndParse(t *testing.T) {

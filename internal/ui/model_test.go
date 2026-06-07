@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"yaks-tui/internal/yaks"
+	"github.com/WhimsicalBees/yaks-tui/internal/yaks"
 )
 
 // stubClient implements the dataSource the model depends on.

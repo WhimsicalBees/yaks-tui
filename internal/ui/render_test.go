@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"yaks-tui/internal/yaks"
+	"github.com/WhimsicalBees/yaks-tui/internal/yaks"
 )
 
 func TestStateDot(t *testing.T) {

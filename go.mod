@@ -1,4 +1,4 @@
-module yaks-tui
+module github.com/WhimsicalBees/yaks-tui
 
 go 1.26.2
 

@@ -14,9 +14,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 
-	"yaks-tui/internal/shell"
-	"yaks-tui/internal/tree"
-	"yaks-tui/internal/yaks"
+	"github.com/WhimsicalBees/yaks-tui/internal/shell"
+	"github.com/WhimsicalBees/yaks-tui/internal/tree"
+	"github.com/WhimsicalBees/yaks-tui/internal/yaks"
 )
 
 // dataSource is the slice of the yaks client the UI needs. Defined here (consumer

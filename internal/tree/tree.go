@@ -2,7 +2,7 @@
 // rows given an expansion state. Pure logic — no I/O, no UI.
 package tree
 
-import "yaks-tui/internal/yaks"
+import "github.com/WhimsicalBees/yaks-tui/internal/yaks"
 
 // Row is one visible line in the tree pane.
 type Row struct {

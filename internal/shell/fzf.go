@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"yaks-tui/internal/yaks"
+	"github.com/WhimsicalBees/yaks-tui/internal/yaks"
 )
 
 const fzfSep = "\t"
