@@ -104,15 +104,14 @@ Timing tuned for readability (not frantic).
 **Build target:** `make demo` runs `vhs docs/demo.tape` to regenerate
 `docs/demo.gif`.
 
-**Constraints (documented):**
+**Generation:** VHS is not yet installed on the build machine. The
+implementation installs it (`brew install vhs`, which pulls `ttyd` + `ffmpeg`),
+writes the tape, runs `make demo`, and commits the resulting `docs/demo.gif`.
+VHS runs headless (via ttyd), so no manual terminal capture is needed.
 
-- Generating the GIF requires `vhs` installed (`brew install vhs`) and is run by
-  a human in a real terminal — it cannot be produced in this automated session.
 - The committed `demo.gif` means contributors and GitHub viewers never need VHS;
   only someone regenerating the GIF does.
-- The README references `![demo](docs/demo.gif)`; the reference is wired in even
-  before the GIF is first generated, so it lights up as soon as `make demo` is
-  run.
+- The README references `![demo](docs/demo.gif)`.
 
 ---
 
@@ -197,22 +196,37 @@ entries for v1 (browse + triage, fuzzy find) and v1.1 (inline context editor).
 
 ## 6. Module path
 
-Change the module path so `go install` works from the public repo.
+Change the module path so `go install` works from the public repo. The owner is
+the **`WhimsicalBees`** org (exact casing matters — Go module paths are
+case-sensitive, unlike GitHub URLs).
 
-- `go.mod`: `module yaks-tui` → `module github.com/whimsicalbees/yaks-tui`.
+- `go.mod`: `module yaks-tui` → `module github.com/WhimsicalBees/yaks-tui`.
 - Update internal imports: `yaks-tui/internal/...` →
-  `github.com/whimsicalbees/yaks-tui/internal/...` across all `.go` files.
-- README gets an install line: `go install github.com/whimsicalbees/yaks-tui@latest`.
+  `github.com/WhimsicalBees/yaks-tui/internal/...` across all `.go` files.
+- README gets an install line: `go install github.com/WhimsicalBees/yaks-tui@latest`.
 - Verify with `go build ./...` and `go test ./...` after the rename.
 
-**Note:** creating the GitHub remote and pushing are separate actions the author
-authorizes; this spec only changes the local module path and imports.
+---
+
+## 7. Create and push the GitHub repository
+
+The author (`LenaAnneKrug`) is an active admin of the `WhimsicalBees` org and
+`gh` is authenticated, so this is done with the CLI as the final step:
+
+- Run the full verification suite first (build, test, gofmt, privacy grep).
+- Create the repo: `gh repo create WhimsicalBees/yaks-tui --public` with a
+  description.
+- Add the remote and push `main`.
+
+**Confirmation gate:** publishing to a public repo is an irreversible outward
+action. Before the push, confirm with the author at that moment (per the
+workspace red-line: anything that leaves the machine deserves a beat). This is a
+confirmation point, not a capability limit.
 
 ---
 
 ## Out of scope
 
-- Creating the GitHub repository and pushing (author-authorized, separate step).
 - Issue/PR templates (add when there are contributors).
 - SPDX headers in source files (root LICENSE suffices for MIT).
 - Any change to application behavior.
@@ -223,7 +237,7 @@ authorizes; this spec only changes the local module path and imports.
 - `gofmt -l .` reports nothing.
 - Privacy grep over staged `.claude/` and AGENTS/CLAUDE content finds no
   `lkrug` / `rtk` / absolute-home-path matches.
-- Manual (author, real terminal): `make demo` produces `docs/demo.gif`; the
-  README renders it.
+- `make demo` produces `docs/demo.gif` (after VHS is installed); the README
+  renders it.
 - Diátaxis reference docs cross-checked against `internal/ui/keys.go` and
   `main.go`.
