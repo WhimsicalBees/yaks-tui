@@ -44,6 +44,9 @@ make build
 | `tab` | switch pane focus |
 | `w` / `b` / `d` / `t` | set state wip / blocked / done / todo |
 | `e` | edit context body inline |
+| `H` | hide done yaks |
+| `W` | focus wip / blocked |
+| `f` | search by name |
 | `/` | fuzzy jump (needs fzf) |
 | `r` | reload |
 | `?` | toggle help |
