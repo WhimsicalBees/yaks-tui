@@ -1,9 +1,15 @@
 # yaks-tui
 
+![CI](https://github.com/WhimsicalBees/yaks-tui/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)
+
 An interactive, keyboard-driven terminal UI for [yaks](https://github.com/mattwynne/yaks).
 
 Browse your yak tree in two panes — tree on the left, rendered markdown detail on
 the right — and triage state without leaving the keyboard.
+
+![yaks-tui demo](docs/demo.gif)
 
 ## Requirements
 
@@ -15,7 +21,13 @@ Markdown detail is rendered in-process with
 [glamour](https://github.com/charmbracelet/glamour) — no `glow` or other external
 renderer is required.
 
-## Build & run
+## Install
+
+```bash
+go install github.com/WhimsicalBees/yaks-tui@latest
+```
+
+Or build from source:
 
 ```bash
 make build
@@ -38,6 +50,15 @@ make build
 | `q` / `ctrl+c` | quit |
 
 While editing: `ctrl+s` saves, `esc` cancels.
+
+## Documentation
+
+Full docs live in [`docs/`](docs/README.md): a getting-started tutorial,
+how-to guides, a keybinding reference, and design explanations.
+
+## License
+
+[MIT](LICENSE) © 2026 Lena Anne Krug
 
 ## Scope
 
