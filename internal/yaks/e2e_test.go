@@ -82,3 +82,17 @@ func (d dirRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	return out, nil
 }
+
+func (d dirRunner) RunWithInput(ctx context.Context, stdin string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "yx", args...)
+	cmd.Dir = d.dir
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("yx %s: %s", strings.Join(args, " "), strings.TrimSpace(string(ee.Stderr)))
+		}
+		return nil, err
+	}
+	return out, nil
+}

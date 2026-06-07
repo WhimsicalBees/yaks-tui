@@ -12,19 +12,32 @@ import (
 // so tests can inject a fake instead of running the real binary.
 type Runner interface {
 	Run(ctx context.Context, args ...string) ([]byte, error)
+	// RunWithInput is like Run but pipes stdin to the command — used for
+	// `yx context <id>`, which reads the new body from stdin.
+	RunWithInput(ctx context.Context, stdin string, args ...string) ([]byte, error)
 }
 
 // ExecRunner runs the real `yx` binary in the current working directory.
 type ExecRunner struct{}
 
 func (ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	return runYx(exec.CommandContext(ctx, "yx", args...), args)
+}
+
+func (ExecRunner) RunWithInput(ctx context.Context, stdin string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "yx", args...)
+	cmd.Stdin = strings.NewReader(stdin)
+	return runYx(cmd, args)
+}
+
+// runYx executes cmd and maps failures to a friendly error. It surfaces stderr
+// from yx so callers can show a useful message, falling back to wrapping the
+// error itself when stderr is empty so the exit status isn't lost and the
+// message is never blank. The args are joined into a readable command (e.g.
+// "yx list --format json") rather than a Go slice.
+func runYx(cmd *exec.Cmd, args []string) ([]byte, error) {
 	out, err := cmd.Output()
 	if err != nil {
-		// Surface stderr from yx so callers can show a useful message. Fall back
-		// to wrapping the error itself when stderr is empty, so the exit status
-		// isn't lost and the message is never blank. The args are joined into a
-		// readable command (e.g. "yx list --format json") rather than a Go slice.
 		cmdline := "yx " + strings.Join(args, " ")
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
 			return nil, fmt.Errorf("%s: %s", cmdline, strings.TrimSpace(string(ee.Stderr)))
@@ -69,6 +82,14 @@ func (c *Client) SetState(ctx context.Context, id, state string) error {
 		return fmt.Errorf("invalid state %q", state)
 	}
 	_, err := c.r.Run(ctx, "state", id, state)
+	return err
+}
+
+// SetContext replaces a yak's context body by id. The content is piped to
+// `yx context <id>` on stdin, which yx reads when stdin is present. An empty
+// content string is valid and clears the body.
+func (c *Client) SetContext(ctx context.Context, id, content string) error {
+	_, err := c.r.RunWithInput(ctx, content, "context", id)
 	return err
 }
 

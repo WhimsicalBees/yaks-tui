@@ -8,12 +8,19 @@ import (
 
 // fakeRunner returns canned output/err and records the args it was called with.
 type fakeRunner struct {
-	out     []byte
-	err     error
-	gotArgs []string
+	out      []byte
+	err      error
+	gotArgs  []string
+	gotStdin string
 }
 
 func (f *fakeRunner) Run(_ context.Context, args ...string) ([]byte, error) {
+	f.gotArgs = args
+	return f.out, f.err
+}
+
+func (f *fakeRunner) RunWithInput(_ context.Context, stdin string, args ...string) ([]byte, error) {
+	f.gotStdin = stdin
 	f.gotArgs = args
 	return f.out, f.err
 }
@@ -70,6 +77,27 @@ func TestClientSetStateRejectsBadState(t *testing.T) {
 	}
 	if fr.gotArgs != nil {
 		t.Fatal("should not have called yx for invalid state")
+	}
+}
+
+func TestClientSetContext(t *testing.T) {
+	fr := &fakeRunner{out: []byte("done\n")}
+	c := NewClient(fr)
+	body := "# Title\n\nsome body\n"
+	if err := c.SetContext(context.Background(), "deploy-app-x1y2", body); err != nil {
+		t.Fatalf("SetContext: %v", err)
+	}
+	if fr.gotStdin != body {
+		t.Fatalf("stdin = %q, want %q", fr.gotStdin, body)
+	}
+	want := []string{"context", "deploy-app-x1y2"}
+	if len(fr.gotArgs) != len(want) {
+		t.Fatalf("args = %v, want %v", fr.gotArgs, want)
+	}
+	for i := range want {
+		if fr.gotArgs[i] != want[i] {
+			t.Fatalf("args = %v, want %v", fr.gotArgs, want)
+		}
 	}
 }
 
