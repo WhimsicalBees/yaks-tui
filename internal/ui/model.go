@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -23,6 +24,7 @@ import (
 type dataSource interface {
 	List(ctx context.Context) ([]yaks.Yak, error)
 	SetState(ctx context.Context, id, state string) error
+	SetContext(ctx context.Context, id, content string) error
 }
 
 type focus int
@@ -36,6 +38,7 @@ const (
 type loadedMsg struct{ roots []yaks.Yak }
 type errMsg struct{ err error }
 type stateChangedMsg struct{}
+type contextSavedMsg struct{}
 type loadedMsgPreserving struct {
 	roots  []yaks.Yak
 	prevID string
@@ -59,6 +62,10 @@ type Model struct {
 	showHelp bool
 	ready    bool
 	mdStyle  string // glamour style name, resolved once at startup (see New)
+
+	editing bool           // true while the inline context editor is open
+	editID  string         // id of the yak being edited (captured on entry)
+	ta      textarea.Model // inline editor for the context body
 }
 
 func New(client dataSource) Model {
@@ -71,12 +78,17 @@ func New(client dataSource) Model {
 	if isTTY {
 		dark = lipgloss.HasDarkBackground()
 	}
+	ta := textarea.New()
+	ta.Prompt = ""   // no per-line prompt gutter; the body is plain markdown
+	ta.CharLimit = 0 // no limit
+	ta.ShowLineNumbers = false
 	return Model{
 		client:   client,
 		keys:     defaultKeys(),
 		help:     help.New(),
 		expanded: map[string]bool{},
 		mdStyle:  resolveMarkdownStyle(isTTY, dark),
+		ta:       ta,
 	}
 }
 
@@ -137,6 +149,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, m.reloadPreservingCmd()
 
+	case contextSavedMsg:
+		// Saved successfully: leave edit mode and reload so the detail pane
+		// reflects the new body (cursor preserved by id).
+		m.editing = false
+		m.status = ""
+		return m, m.reloadPreservingCmd()
+
 	case jumpMsg:
 		if msg.id != "" {
 			if idx := tree.IndexOfID(m.rows, msg.id); idx >= 0 {
@@ -153,6 +172,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Edit mode owns the keyboard: ctrl+s saves, esc cancels, everything else
+	// (including ctrl+c) is text input for the textarea. This must come before
+	// any global binding so the editor isn't interrupted by triage/quit keys.
+	if m.editing {
+		switch msg.Type {
+		case tea.KeyCtrlS:
+			return m, m.saveContextCmd()
+		case tea.KeyEsc:
+			m.editing = false
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.ta, cmd = m.ta.Update(msg)
+		return m, cmd
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -214,7 +249,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.reloadPreservingCmd()
 	case key.Matches(msg, m.keys.Find):
 		return m, m.findCmd()
+	case key.Matches(msg, m.keys.Edit):
+		return m.enterEdit()
 	}
+	return m, nil
+}
+
+// enterEdit opens the inline editor for the selected yak, loading its current
+// context into the textarea. No selection → no-op.
+func (m Model) enterEdit() (tea.Model, tea.Cmd) {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return m, nil
+	}
+	y := *m.rows[m.cursor].Yak
+	body := ""
+	if y.Context != nil {
+		body = *y.Context
+	}
+	m.editing = true
+	m.editID = y.ID
+	m.ta.SetValue(body)
+	m.ta.CursorEnd()
+	m.ta.Focus()
 	return m, nil
 }
 
@@ -295,6 +351,8 @@ func (m *Model) layout() {
 		m.detail.Width = detailWidth
 		m.detail.Height = bodyHeight
 	}
+	m.ta.SetWidth(detailWidth)
+	m.ta.SetHeight(bodyHeight)
 }
 
 func (m *Model) refreshDetail() {
@@ -316,6 +374,21 @@ func (m Model) setStateCmd(state string) tea.Cmd {
 			return errMsg{err}
 		}
 		return stateChangedMsg{}
+	}
+}
+
+// saveContextCmd writes the textarea body to the yak captured when edit mode
+// was entered. On success it yields contextSavedMsg (which exits edit mode and
+// reloads); on failure it yields errMsg and edit mode is left untouched, so the
+// user's edits aren't lost.
+func (m Model) saveContextCmd() tea.Cmd {
+	id := m.editID
+	content := m.ta.Value()
+	return func() tea.Msg {
+		if err := m.client.SetContext(context.Background(), id, content); err != nil {
+			return errMsg{err}
+		}
+		return contextSavedMsg{}
 	}
 }
 
@@ -355,13 +428,27 @@ func (m Model) View() string {
 		detailBorder = focusedBorder
 	}
 
+	// While editing, the right pane shows the textarea and takes focus styling
+	// regardless of the underlying focus field.
+	rightContent := m.detail.View()
+	if m.editing {
+		rightContent = m.ta.View()
+		detailBorder = focusedBorder
+		treeBorder = blurredBorder
+	}
+
 	left := treeBorder.Width(treeWidth).Height(bodyHeight).Render(m.renderTree(treeWidth, bodyHeight))
-	right := detailBorder.Width(detailWidth).Height(bodyHeight).Render(m.detail.View())
+	right := detailBorder.Width(detailWidth).Height(bodyHeight).Render(rightContent)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	bar := m.help.View(m.keys)
-	if m.status != "" {
+	var bar string
+	switch {
+	case m.editing:
+		bar = subtle.Render("editing — ctrl+s save · esc cancel")
+	case m.status != "":
 		bar = statusErr.Render(m.status)
+	default:
+		bar = m.help.View(m.keys)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, body, bar)
 }

@@ -15,12 +15,19 @@ type stubClient struct {
 	listErr  error
 	setErr   error
 	setCalls []struct{ id, state string }
+
+	ctxErr   error
+	ctxCalls []struct{ id, content string }
 }
 
 func (s *stubClient) List(_ context.Context) ([]yaks.Yak, error) { return s.roots, s.listErr }
 func (s *stubClient) SetState(_ context.Context, id, state string) error {
 	s.setCalls = append(s.setCalls, struct{ id, state string }{id, state})
 	return s.setErr
+}
+func (s *stubClient) SetContext(_ context.Context, id, content string) error {
+	s.ctxCalls = append(s.ctxCalls, struct{ id, content string }{id, content})
+	return s.ctxErr
 }
 
 func twoYaks() []yaks.Yak {
@@ -178,6 +185,129 @@ func TestTriageSetStateErrorSurfacesAndDoesNotReload(t *testing.T) {
 type errStub string
 
 func (e errStub) Error() string { return string(e) }
+
+func yaksWithContext() []yaks.Yak {
+	body := "existing body"
+	return []yaks.Yak{
+		{ID: "a", Name: "alpha", State: "todo", Context: &body},
+		{ID: "b", Name: "beta", State: "wip"},
+	}
+}
+
+func TestEditEntersModeAndLoadsContext(t *testing.T) {
+	m := loaded(t, yaksWithContext())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := m2.(Model)
+	if !mm.editing {
+		t.Fatal("e should enter edit mode")
+	}
+	if got := mm.ta.Value(); got != "existing body" {
+		t.Fatalf("textarea value = %q, want existing body", got)
+	}
+}
+
+func TestEditEmptyContextStartsBlank(t *testing.T) {
+	m := loaded(t, yaksWithContext())
+	// move to "b" which has no context
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := m3.(Model)
+	if !mm.editing {
+		t.Fatal("e should enter edit mode")
+	}
+	if got := mm.ta.Value(); got != "" {
+		t.Fatalf("textarea value = %q, want empty", got)
+	}
+}
+
+func TestEditNoSelectionIsNoOp(t *testing.T) {
+	sc := &stubClient{roots: twoYaks()}
+	m := New(sc)
+	// no load → no rows
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	if m2.(Model).editing {
+		t.Fatal("e with no selection should not enter edit mode")
+	}
+}
+
+func TestEditEscCancelsWithoutSaving(t *testing.T) {
+	sc := &stubClient{roots: yaksWithContext()}
+	m := loaded(t, yaksWithContext())
+	m.client = sc
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm := m3.(Model)
+	if mm.editing {
+		t.Fatal("esc should exit edit mode")
+	}
+	if len(sc.ctxCalls) != 0 {
+		t.Fatalf("esc must not save, got %+v", sc.ctxCalls)
+	}
+}
+
+func TestEditCtrlSSaves(t *testing.T) {
+	sc := &stubClient{roots: yaksWithContext()}
+	m := loaded(t, yaksWithContext())
+	m.client = sc
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	// type into the textarea
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" more")})
+	m4, cmd := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if cmd == nil {
+		t.Fatal("ctrl+s should produce a save command")
+	}
+	msg := cmd()
+	if _, ok := msg.(contextSavedMsg); !ok {
+		t.Fatalf("expected contextSavedMsg, got %T", msg)
+	}
+	if len(sc.ctxCalls) != 1 || sc.ctxCalls[0].id != "a" {
+		t.Fatalf("SetContext calls = %+v", sc.ctxCalls)
+	}
+	if sc.ctxCalls[0].content != "existing body more" {
+		t.Fatalf("saved content = %q", sc.ctxCalls[0].content)
+	}
+	// contextSavedMsg handling should exit edit mode.
+	m5, _ := m4.(Model).Update(contextSavedMsg{})
+	if m5.(Model).editing {
+		t.Fatal("contextSavedMsg should exit edit mode")
+	}
+}
+
+func TestEditSaveErrorStaysInEditMode(t *testing.T) {
+	sc := &stubClient{roots: yaksWithContext(), ctxErr: errStub("save boom")}
+	m := loaded(t, yaksWithContext())
+	m.client = sc
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m3, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if cmd == nil {
+		t.Fatal("ctrl+s should produce a command")
+	}
+	msg := cmd()
+	if _, ok := msg.(errMsg); !ok {
+		t.Fatalf("expected errMsg on save failure, got %T", msg)
+	}
+	// Applying the errMsg must keep us in edit mode so edits aren't lost.
+	m4, _ := m3.(Model).Update(msg)
+	if !m4.(Model).editing {
+		t.Fatal("save failure must keep edit mode active")
+	}
+}
+
+func TestEditKeysReachTextareaNotTriage(t *testing.T) {
+	// While editing, a 'd' is text input, not the "done" triage key.
+	sc := &stubClient{roots: yaksWithContext()}
+	m := loaded(t, yaksWithContext())
+	m.client = sc
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	mm := m3.(Model)
+	if len(sc.setCalls) != 0 {
+		t.Fatalf("d while editing must not trigger triage, got %+v", sc.setCalls)
+	}
+	if got := mm.ta.Value(); got != "existing bodyd" {
+		t.Fatalf("textarea value = %q, want existing bodyd", got)
+	}
+}
 
 func TestCollapseExpand(t *testing.T) {
 	roots := []yaks.Yak{{ID: "p", Name: "parent", State: "todo",

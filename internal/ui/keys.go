@@ -13,6 +13,7 @@ type keyMap struct {
 	Blocked  key.Binding
 	Done     key.Binding
 	Todo     key.Binding
+	Edit     key.Binding
 	Find     key.Binding
 	Reload   key.Binding
 	Help     key.Binding
@@ -31,6 +32,7 @@ func defaultKeys() keyMap {
 		Blocked:  key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "blocked")),
 		Done:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "done")),
 		Todo:     key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "todo")),
+		Edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 		Find:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "find")),
 		Reload:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
@@ -40,13 +42,13 @@ func defaultKeys() keyMap {
 
 // ShortHelp / FullHelp satisfy bubbles/help.KeyMap.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Collapse, k.Expand, k.Wip, k.Blocked, k.Done, k.Find, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Collapse, k.Expand, k.Wip, k.Blocked, k.Done, k.Edit, k.Find, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Expand, k.Collapse, k.Toggle, k.Focus},
-		{k.Wip, k.Blocked, k.Done, k.Todo},
+		{k.Wip, k.Blocked, k.Done, k.Todo, k.Edit},
 		{k.Find, k.Reload, k.Help, k.Quit},
 	}
 }
