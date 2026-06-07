@@ -65,6 +65,22 @@ func TestE2E_ListAndSetState(t *testing.T) {
 	if roots[0].State != StateWip {
 		t.Fatalf("state = %q, want wip", roots[0].State)
 	}
+
+	// Round-trip the context body through SetContext → List.
+	body := "# Notes\n\nremember the milk\n"
+	if err := c.SetContext(context.Background(), id, body); err != nil {
+		t.Fatalf("SetContext: %v", err)
+	}
+	roots, err = c.List(context.Background())
+	if err != nil {
+		t.Fatalf("List after SetContext: %v", err)
+	}
+	if roots[0].Context == nil {
+		t.Fatal("context is nil after SetContext")
+	}
+	if got := strings.TrimSpace(*roots[0].Context); got != strings.TrimSpace(body) {
+		t.Fatalf("context = %q, want %q", got, body)
+	}
 }
 
 // dirRunner runs yx in a fixed directory (test-only).
