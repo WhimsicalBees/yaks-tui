@@ -31,12 +31,16 @@ make build
 | `enter` | toggle fold |
 | `tab` | switch pane focus |
 | `w` / `b` / `d` / `t` | set state wip / blocked / done / todo |
+| `e` | edit context body inline |
 | `/` | fuzzy jump (needs fzf) |
 | `r` | reload |
 | `?` | toggle help |
 | `q` / `ctrl+c` | quit |
 
+While editing: `ctrl+s` saves, `esc` cancels.
+
 ## Scope
 
-v1 is browse + triage. Editing, adding/moving yaks, tags, sync, and configurable
-layouts are planned — see `docs/superpowers/specs/`.
+v1 is browse + triage. v1.1 adds inline editing of a yak's context body (`e`).
+Editing other fields, adding/moving/removing yaks, tags, sync, and configurable
+layouts are still planned — see `docs/superpowers/specs/`.
