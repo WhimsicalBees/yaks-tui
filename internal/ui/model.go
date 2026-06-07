@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -69,6 +71,10 @@ type Model struct {
 
 	hideDone bool // H: hide done yaks (done subtrees with no active descendant)
 	wipFocus bool // W: show only wip/blocked yaks (+ ancestors)
+
+	searching bool            // true while the search input line is open
+	search    textinput.Model // one-line incremental name filter
+	query     string          // committed search text (applied when input closed)
 }
 
 func New(client dataSource) Model {
@@ -85,6 +91,9 @@ func New(client dataSource) Model {
 	ta.Prompt = ""   // no per-line prompt gutter; the body is plain markdown
 	ta.CharLimit = 0 // no limit
 	ta.ShowLineNumbers = false
+	ti := textinput.New()
+	ti.Prompt = "search: "
+	ti.CharLimit = 0
 	return Model{
 		client:   client,
 		keys:     defaultKeys(),
@@ -92,6 +101,7 @@ func New(client dataSource) Model {
 		expanded: map[string]bool{},
 		mdStyle:  resolveMarkdownStyle(isTTY, dark),
 		ta:       ta,
+		search:   ti,
 	}
 }
 
@@ -114,11 +124,17 @@ func (m *Model) rebuildRows() {
 }
 
 // filterPredicate ANDs the active view filters into one predicate, or returns
-// nil when no filter is active (nil = show everything).
+// nil when none are active (nil = show everything). The text query is taken
+// live from the input while searching, otherwise from the committed query.
 func (m Model) filterPredicate() tree.Predicate {
 	hideDone := m.hideDone
 	wipFocus := m.wipFocus
-	if !hideDone && !wipFocus {
+	q := m.query
+	if m.searching {
+		q = m.search.Value()
+	}
+	q = strings.ToLower(strings.TrimSpace(q))
+	if !hideDone && !wipFocus && q == "" {
 		return nil
 	}
 	return func(y *yaks.Yak) bool {
@@ -126,6 +142,9 @@ func (m Model) filterPredicate() tree.Predicate {
 			return false
 		}
 		if wipFocus && y.State != yaks.StateWip && y.State != yaks.StateBlocked {
+			return false
+		}
+		if q != "" && !strings.Contains(strings.ToLower(y.Name), q) {
 			return false
 		}
 		return true
@@ -206,6 +225,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Search mode owns the keyboard: enter commits the query (filter persists),
+	// esc clears it, everything else is text input for the search field.
+	if m.searching {
+		switch msg.Type {
+		case tea.KeyEnter:
+			m.query = m.search.Value()
+			m.searching = false
+			m.search.Blur()
+			id := m.selectedID()
+			m.rebuildRows()
+			m.restoreCursor(id)
+			m.refreshDetail()
+			return m, nil
+		case tea.KeyEsc:
+			m.searching = false
+			m.search.Blur()
+			m.search.SetValue("")
+			m.query = ""
+			id := m.selectedID()
+			m.rebuildRows()
+			m.restoreCursor(id)
+			m.refreshDetail()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.search, cmd = m.search.Update(msg)
+		// Re-filter live as the query changes.
+		id := m.selectedID()
+		m.rebuildRows()
+		m.restoreCursor(id)
+		m.refreshDetail()
+		return m, cmd
+	}
+
 	// Edit mode owns the keyboard: ctrl+s saves, esc cancels, everything else
 	// (including ctrl+c) is text input for the textarea. This must come before
 	// any global binding so the editor isn't interrupted by triage/quit keys.
@@ -297,6 +350,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildRows()
 		m.restoreCursor(id)
 		m.refreshDetail()
+	case key.Matches(msg, m.keys.Search):
+		m.searching = true
+		m.search.SetValue("")
+		m.search.Focus()
+		return m, nil
 	}
 	return m, nil
 }
@@ -458,7 +516,12 @@ func (m Model) View() string {
 		return subtle.Render("Terminal too small — please resize (need at least 40×8).")
 	}
 	if len(m.rows) == 0 {
-		msg := "No yaks yet.\n\nStart one with:  yx add \"my first yak\"\n\n(v1.1 will let you add them right here.)\n\nq to quit · r to reload"
+		var msg string
+		if m.hideDone || m.wipFocus || m.query != "" || m.searching {
+			msg = "No yaks match the current view.\n\nPress esc to clear search, or H / W to clear filters."
+		} else {
+			msg = "No yaks yet.\n\nStart one with:  yx add \"my first yak\"\n\nq to quit · r to reload"
+		}
 		return subtle.Render(msg)
 	}
 	// Graceful guards added in Task 15; basic two-pane here.
@@ -489,12 +552,37 @@ func (m Model) View() string {
 
 	var bar string
 	switch {
+	case m.searching:
+		bar = subtle.Render(m.search.View() + "  (enter to keep · esc to clear)")
 	case m.editing:
 		bar = subtle.Render("editing — ctrl+s save · esc cancel")
 	case m.status != "":
 		bar = statusErr.Render(m.status)
 	default:
-		bar = m.help.View(m.keys)
+		if ind := m.filterIndicator(); ind != "" {
+			bar = subtle.Render(ind)
+		} else {
+			bar = m.help.View(m.keys)
+		}
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, body, bar)
+}
+
+// filterIndicator summarizes active view filters for the status bar, or "" when
+// none are active.
+func (m Model) filterIndicator() string {
+	var parts []string
+	if m.hideDone {
+		parts = append(parts, "[hide-done]")
+	}
+	if m.wipFocus {
+		parts = append(parts, "[wip-focus]")
+	}
+	if m.query != "" {
+		parts = append(parts, "[search: "+m.query+"]")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ") + "  ·  H/W toggle · f search · esc clears search"
 }

@@ -387,6 +387,102 @@ func TestFilterCursorReresolvesWhenSelectedHidden(t *testing.T) {
 	}
 }
 
+func searchYaks() []yaks.Yak {
+	return []yaks.Yak{
+		{ID: "a", Name: "auth login", State: "todo"},
+		{ID: "b", Name: "billing", State: "wip"},
+		{ID: "c", Name: "auth logout", State: "todo"},
+	}
+}
+
+func TestSearchEntersModeAndFiltersLive(t *testing.T) {
+	m := loaded(t, searchYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	if !m2.(Model).searching {
+		t.Fatal("f should enter search mode")
+	}
+	// type "auth"
+	m3 := m2
+	for _, r := range "auth" {
+		m3, _ = m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	got := rowIDset(m3.(Model))
+	if len(got) != 2 || got[0] != "a" || got[1] != "c" {
+		t.Fatalf("search 'auth' rows = %v, want [a c]", got)
+	}
+}
+
+func TestSearchEnterCommitsAndKeepsFilter(t *testing.T) {
+	m := loaded(t, searchYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m3 := m2
+	for _, r := range "billing" {
+		m3, _ = m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := m4.(Model)
+	if mm.searching {
+		t.Fatal("enter should exit search input mode")
+	}
+	if mm.query != "billing" {
+		t.Fatalf("query = %q, want billing", mm.query)
+	}
+	if len(mm.rows) != 1 || mm.rows[0].Yak.ID != "b" {
+		t.Fatalf("committed search rows = %v, want [b]", rowIDset(mm))
+	}
+}
+
+func TestSearchEscClearsFilter(t *testing.T) {
+	m := loaded(t, searchYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m3 := m2
+	for _, r := range "auth" {
+		m3, _ = m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm := m4.(Model)
+	if mm.searching || mm.query != "" {
+		t.Fatalf("esc should clear search: searching=%v query=%q", mm.searching, mm.query)
+	}
+	if len(mm.rows) != 3 {
+		t.Fatalf("after esc, rows = %d, want 3 (full tree)", len(mm.rows))
+	}
+}
+
+func TestSearchKeysAreTextNotCommands(t *testing.T) {
+	// While searching, 'd' is text input, not the "done" triage key.
+	sc := &stubClient{roots: searchYaks()}
+	m := loaded(t, searchYaks())
+	m.client = sc
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if len(sc.setCalls) != 0 {
+		t.Fatalf("d while searching must not trigger triage, got %+v", sc.setCalls)
+	}
+	if m3.(Model).search.Value() != "d" {
+		t.Fatalf("search value = %q, want d", m3.(Model).search.Value())
+	}
+}
+
+func TestSearchComposesWithHideDone(t *testing.T) {
+	// "auth login" todo, "auth done" done; hideDone + search "auth" → only the todo.
+	roots := []yaks.Yak{
+		{ID: "a", Name: "auth login", State: "todo"},
+		{ID: "x", Name: "auth archived", State: "done"},
+	}
+	m := loaded(t, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m4 := m3
+	for _, r := range "auth" {
+		m4, _ = m4.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	got := rowIDset(m4.(Model))
+	if len(got) != 1 || got[0] != "a" {
+		t.Fatalf("hideDone+search rows = %v, want [a]", got)
+	}
+}
+
 func TestCollapseExpand(t *testing.T) {
 	roots := []yaks.Yak{{ID: "p", Name: "parent", State: "todo",
 		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}}}}
