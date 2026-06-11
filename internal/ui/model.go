@@ -731,7 +731,9 @@ func (m Model) View() string {
 	switch {
 	case m.confirming:
 		prompt := fmt.Sprintf("remove %q? (y/n)", m.removeName)
-		if m.removeKids > 0 {
+		if m.removeKids == 1 {
+			prompt = fmt.Sprintf("remove %q and its 1 child? (y/n)", m.removeName)
+		} else if m.removeKids > 1 {
 			prompt = fmt.Sprintf("remove %q and its %d children? (y/n)", m.removeName, m.removeKids)
 		}
 		bar = statusErr.Render(prompt)

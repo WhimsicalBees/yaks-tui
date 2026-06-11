@@ -173,6 +173,22 @@ func TestTriageNoSelectionIsNoOp(t *testing.T) {
 	}
 }
 
+func TestAddChildRenameRemoveNoSelectionAreNoOps(t *testing.T) {
+	// No load happened, so there are no rows and nothing is selected. a (add
+	// child), R (rename), and x (remove) all require a selection and must be
+	// safe no-ops — they must not open a mode. A (add root) is intentionally
+	// NOT here: it works with an empty tree.
+	for _, r := range []rune{'a', 'R', 'x'} {
+		sc := &stubClient{roots: twoYaks()}
+		m := New(sc)
+		m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		mm := m2.(Model)
+		if mm.inputMode != inputNone || mm.confirming {
+			t.Fatalf("%q with no selection should not open a mode (inputMode=%v confirming=%v)", r, mm.inputMode, mm.confirming)
+		}
+	}
+}
+
 func TestReloadWhenSelectedYakVanished(t *testing.T) {
 	// Cursor is on "b"; a reload returns a tree that no longer contains "b"
 	// (e.g. another client removed it). The cursor must land on a valid row,

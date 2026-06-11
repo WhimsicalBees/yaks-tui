@@ -188,7 +188,7 @@ func TestFooterConfirmLeaf(t *testing.T) {
 	}
 }
 
-func TestFooterConfirmSubtree(t *testing.T) {
+func TestFooterConfirmSingleChild(t *testing.T) {
 	roots := []yaks.Yak{{
 		ID: "p", Name: "parent", State: "todo",
 		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}},
@@ -196,7 +196,23 @@ func TestFooterConfirmSubtree(t *testing.T) {
 	m := loaded(t, roots)
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	out := m2.(Model).View()
-	if !contains(out, "and its 1 children") {
+	if !contains(out, "and its 1 child?") {
+		t.Fatalf("single-child confirm should be grammatical:\n%s", out)
+	}
+}
+
+func TestFooterConfirmSubtree(t *testing.T) {
+	roots := []yaks.Yak{{
+		ID: "p", Name: "parent", State: "todo",
+		Children: []yaks.Yak{
+			{ID: "c1", Name: "child1", State: "todo"},
+			{ID: "c2", Name: "child2", State: "todo"},
+		},
+	}}
+	m := loaded(t, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	out := m2.(Model).View()
+	if !contains(out, "and its 2 children") {
 		t.Fatalf("footer missing subtree confirm:\n%s", out)
 	}
 }
