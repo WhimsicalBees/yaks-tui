@@ -14,6 +14,10 @@ type keyMap struct {
 	Done     key.Binding
 	Todo     key.Binding
 	Edit     key.Binding
+	Add      key.Binding
+	AddRoot  key.Binding
+	Rename   key.Binding
+	Remove   key.Binding
 	HideDone key.Binding
 	WipFocus key.Binding
 	Search   key.Binding
@@ -36,6 +40,10 @@ func defaultKeys() keyMap {
 		Done:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "done")),
 		Todo:     key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "todo")),
 		Edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
+		Add:      key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add child")),
+		AddRoot:  key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "add root")),
+		Rename:   key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "rename")),
+		Remove:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "remove")),
 		HideDone: key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "hide done")),
 		WipFocus: key.NewBinding(key.WithKeys("W"), key.WithHelp("W", "wip focus")),
 		Search:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "search")),
@@ -55,6 +63,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Expand, k.Collapse, k.Toggle, k.Focus},
 		{k.Wip, k.Blocked, k.Done, k.Todo, k.Edit},
+		{k.Add, k.AddRoot, k.Rename, k.Remove},
 		{k.HideDone, k.WipFocus, k.Search, k.Find, k.Reload, k.Help, k.Quit},
 	}
 }

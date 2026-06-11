@@ -27,6 +27,9 @@ type dataSource interface {
 	List(ctx context.Context) ([]yaks.Yak, error)
 	SetState(ctx context.Context, id, state string) error
 	SetContext(ctx context.Context, id, content string) error
+	Add(ctx context.Context, parentID, name string, existing map[string]bool) (string, error)
+	Rename(ctx context.Context, id, newName string) error
+	Remove(ctx context.Context, id string, recursive bool) error
 }
 
 type focus int
@@ -34,6 +37,15 @@ type focus int
 const (
 	focusTree focus = iota
 	focusDetail
+)
+
+type inputMode int
+
+const (
+	inputNone inputMode = iota
+	inputAddChild
+	inputAddRoot
+	inputRename
 )
 
 // Messages produced by async commands.
@@ -75,6 +87,16 @@ type Model struct {
 	searching bool            // true while the search input line is open
 	search    textinput.Model // one-line incremental name filter
 	query     string          // committed search text (applied when input closed)
+
+	inputMode  inputMode       // which add/rename flow is open (inputNone = closed)
+	inputParID string          // parent id for inputAddChild ("" = root)
+	inputTgtID string          // target id for inputRename
+	input      textinput.Model // one-line input for add/rename
+
+	confirming bool   // remove confirmation prompt open
+	removeID   string // captured target id
+	removeName string // for the prompt text
+	removeKids int    // child count → recursive flag + prompt wording
 }
 
 func New(client dataSource) Model {
@@ -94,6 +116,9 @@ func New(client dataSource) Model {
 	ti := textinput.New()
 	ti.Prompt = "search: "
 	ti.CharLimit = 0
+	in := textinput.New()
+	in.Prompt = ""
+	in.CharLimit = 0
 	return Model{
 		client:   client,
 		keys:     defaultKeys(),
@@ -102,6 +127,7 @@ func New(client dataSource) Model {
 		mdStyle:  resolveMarkdownStyle(isTTY, dark),
 		ta:       ta,
 		search:   ti,
+		input:    in,
 	}
 }
 
@@ -156,6 +182,23 @@ func (m Model) selectedID() string {
 		return m.rows[m.cursor].Yak.ID
 	}
 	return ""
+}
+
+// selectedYak returns a copy of the yak under the cursor and true, or false if
+// there's no selection.
+func (m Model) selectedYak() (yaks.Yak, bool) {
+	if m.cursor >= 0 && m.cursor < len(m.rows) {
+		return *m.rows[m.cursor].Yak, true
+	}
+	return yaks.Yak{}, false
+}
+
+// openInput opens the single-line input in the given mode, seeded with value.
+func (m *Model) openInput(mode inputMode, value string) {
+	m.inputMode = mode
+	m.input.SetValue(value)
+	m.input.CursorEnd()
+	m.input.Focus()
 }
 
 // restoreCursor puts the cursor back on the yak with the given id if it's still
@@ -225,6 +268,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Remove confirmation owns the keyboard: y confirms, anything else cancels.
+	if m.confirming {
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && (msg.Runes[0] == 'y' || msg.Runes[0] == 'Y') {
+			cmd := m.removeCmd()
+			m.confirming = false
+			return m, cmd
+		}
+		m.confirming = false
+		return m, nil
+	}
+
+	// Add/rename input owns the keyboard: enter commits (empty = cancel), esc
+	// cancels, everything else is text input.
+	if m.inputMode != inputNone {
+		switch msg.Type {
+		case tea.KeyEnter:
+			name := strings.TrimSpace(m.input.Value())
+			mode := m.inputMode
+			m.inputMode = inputNone
+			m.input.Blur()
+			if name == "" {
+				m.input.SetValue("")
+				return m, nil // empty = no-op cancel
+			}
+			switch mode {
+			case inputAddChild, inputAddRoot:
+				return m, m.addCmd(m.inputParID, name)
+			case inputRename:
+				return m, m.renameCmd(m.inputTgtID, name)
+			}
+			return m, nil
+		case tea.KeyEsc:
+			m.inputMode = inputNone
+			m.input.Blur()
+			m.input.SetValue("")
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
+
 	// Search mode owns the keyboard: enter commits the query (filter persists),
 	// esc clears it, everything else is text input for the search field.
 	if m.searching {
@@ -338,6 +423,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.findCmd()
 	case key.Matches(msg, m.keys.Edit):
 		return m.enterEdit()
+	case key.Matches(msg, m.keys.Add):
+		if y, ok := m.selectedYak(); ok {
+			m.inputParID = y.ID
+			m.openInput(inputAddChild, "")
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.AddRoot):
+		m.inputParID = ""
+		m.openInput(inputAddRoot, "")
+		return m, nil
+	case key.Matches(msg, m.keys.Rename):
+		if y, ok := m.selectedYak(); ok {
+			m.inputTgtID = y.ID
+			m.openInput(inputRename, y.Name)
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Remove):
+		if y, ok := m.selectedYak(); ok {
+			m.confirming = true
+			m.removeID = y.ID
+			m.removeName = y.Name
+			m.removeKids = len(y.Children)
+		}
+		return m, nil
 	case key.Matches(msg, m.keys.HideDone):
 		id := m.selectedID()
 		m.hideDone = !m.hideDone
@@ -507,6 +616,63 @@ func (m Model) saveContextCmd() tea.Cmd {
 	}
 }
 
+// existingIDs collects every id currently in the tree (for add collision checks).
+func (m Model) existingIDs() map[string]bool {
+	ids := map[string]bool{}
+	var walk func(ys []yaks.Yak)
+	walk = func(ys []yaks.Yak) {
+		for i := range ys {
+			ids[ys[i].ID] = true
+			walk(ys[i].Children)
+		}
+	}
+	walk(m.roots)
+	return ids
+}
+
+// reloadPreserving lists the tree and returns a message that reloads it while
+// keeping the cursor on the yak with id (or its nearest neighbor if it's gone).
+func (m Model) reloadPreserving(id string) tea.Msg {
+	roots, err := m.client.List(context.Background())
+	if err != nil {
+		return errMsg{err}
+	}
+	return loadedMsgPreserving{roots: roots, prevID: id}
+}
+
+func (m Model) addCmd(parentID, name string) tea.Cmd {
+	existing := m.existingIDs()
+	return func() tea.Msg {
+		id, err := m.client.Add(context.Background(), parentID, name, existing)
+		if err != nil {
+			return errMsg{fmt.Errorf("couldn't create yak: %w", err)}
+		}
+		return m.reloadPreserving(id)
+	}
+}
+
+func (m Model) renameCmd(id, name string) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.client.Rename(context.Background(), id, name); err != nil {
+			return errMsg{fmt.Errorf("rename failed: %w", err)}
+		}
+		return m.reloadPreserving(id)
+	}
+}
+
+func (m Model) removeCmd() tea.Cmd {
+	id := m.removeID
+	recursive := m.removeKids > 0
+	return func() tea.Msg {
+		if err := m.client.Remove(context.Background(), id, recursive); err != nil {
+			return errMsg{fmt.Errorf("remove failed: %w", err)}
+		}
+		// prevID is the removed yak; IndexOfID won't find it, so the cursor
+		// stays clamped near where it was — the intended "fall to neighbor".
+		return m.reloadPreserving(id)
+	}
+}
+
 func (m Model) reloadPreservingCmd() tea.Cmd {
 	prevID := m.selectedID()
 	return func() tea.Msg {
@@ -563,6 +729,20 @@ func (m Model) View() string {
 
 	var bar string
 	switch {
+	case m.confirming:
+		prompt := fmt.Sprintf("remove %q? (y/n)", m.removeName)
+		if m.removeKids == 1 {
+			prompt = fmt.Sprintf("remove %q and its 1 child? (y/n)", m.removeName)
+		} else if m.removeKids > 1 {
+			prompt = fmt.Sprintf("remove %q and its %d children? (y/n)", m.removeName, m.removeKids)
+		}
+		bar = statusErr.Render(prompt)
+	case m.inputMode == inputAddChild:
+		bar = subtle.Render(fmt.Sprintf("add child of %q: ", m.parentName()) + m.input.View())
+	case m.inputMode == inputAddRoot:
+		bar = subtle.Render("add root: " + m.input.View())
+	case m.inputMode == inputRename:
+		bar = subtle.Render("rename: " + m.input.View())
 	case m.searching:
 		bar = subtle.Render(m.search.View() + "  (enter to keep · esc to clear)")
 	case m.editing:
@@ -577,6 +757,27 @@ func (m Model) View() string {
 		}
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, body, bar)
+}
+
+// parentName returns the display name of inputParID, or "" if not found. Used
+// only to label the add-child prompt.
+func (m Model) parentName() string {
+	if m.inputParID == "" {
+		return ""
+	}
+	var found string
+	var walk func(ys []yaks.Yak)
+	walk = func(ys []yaks.Yak) {
+		for i := range ys {
+			if ys[i].ID == m.inputParID {
+				found = ys[i].Name
+				return
+			}
+			walk(ys[i].Children)
+		}
+	}
+	walk(m.roots)
+	return found
 }
 
 // filterIndicator summarizes active view filters for the status bar, or "" when

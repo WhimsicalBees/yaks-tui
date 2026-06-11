@@ -83,6 +83,78 @@ func TestE2E_ListAndSetState(t *testing.T) {
 	}
 }
 
+func TestE2E_AddRenameRemove(t *testing.T) {
+	if _, err := exec.LookPath("yx"); err != nil {
+		t.Skip("yx not installed; skipping e2e")
+	}
+	dir, err := os.MkdirTemp("", "yaks-e2e-crud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err == nil {
+				os.Chmod(path, 0o700)
+			}
+			return nil
+		})
+		os.RemoveAll(dir)
+	})
+	run := func(name string, args ...string) {
+		t.Helper()
+		cmd := exec.Command(name, args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+		}
+	}
+	run("git", "init")
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".yaks\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewClient(dirRunner{dir})
+	ctx := context.Background()
+
+	// Add a root, then a child under it.
+	rootID, err := c.Add(ctx, "", "deploy app", map[string]bool{})
+	if err != nil {
+		t.Fatalf("Add root: %v", err)
+	}
+	childID, err := c.Add(ctx, rootID, "write tests", map[string]bool{rootID: true})
+	if err != nil {
+		t.Fatalf("Add child: %v", err)
+	}
+
+	// Rename the child.
+	if err := c.Rename(ctx, childID, "write more tests"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	roots, err := c.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(roots) != 1 || len(roots[0].Children) != 1 || roots[0].Children[0].Name != "write more tests" {
+		t.Fatalf("unexpected tree after rename: %+v", roots)
+	}
+
+	// Removing the parent without recursive must fail (it has a child).
+	if err := c.Remove(ctx, rootID, false); err == nil {
+		t.Fatal("expected non-recursive remove of a parent to fail")
+	}
+	// Recursive remove succeeds and empties the tree.
+	if err := c.Remove(ctx, rootID, true); err != nil {
+		t.Fatalf("recursive Remove: %v", err)
+	}
+	roots, err = c.List(ctx)
+	if err != nil {
+		t.Fatalf("List after remove: %v", err)
+	}
+	if len(roots) != 0 {
+		t.Fatalf("tree not empty after recursive remove: %+v", roots)
+	}
+}
+
 // dirRunner runs yx in a fixed directory (test-only).
 type dirRunner struct{ dir string }
 

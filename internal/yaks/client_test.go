@@ -128,6 +128,72 @@ func TestRepoInitializedFalseOnGitignoreError(t *testing.T) {
 	}
 }
 
+func TestClientAddRoot(t *testing.T) {
+	fr := &fakeRunner{out: []byte("added\n")}
+	c := NewClient(fr)
+	gen := func() string { return "zzzz" }
+	id, err := c.add(context.Background(), "", "deploy app", map[string]bool{}, gen)
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if id != "deploy-app-zzzz" {
+		t.Fatalf("id = %q, want deploy-app-zzzz", id)
+	}
+	want := []string{"add", "deploy app", "--id", "deploy-app-zzzz"}
+	assertArgs(t, fr.gotArgs, want)
+}
+
+func TestClientAddChild(t *testing.T) {
+	fr := &fakeRunner{out: []byte("added\n")}
+	c := NewClient(fr)
+	gen := func() string { return "zzzz" }
+	id, err := c.add(context.Background(), "deploy-app-x1y2", "write tests", map[string]bool{}, gen)
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	want := []string{"add", "write tests", "--id", id, "--under", "deploy-app-x1y2"}
+	assertArgs(t, fr.gotArgs, want)
+}
+
+func assertArgs(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("args = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("args = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestClientRename(t *testing.T) {
+	fr := &fakeRunner{out: []byte("renamed\n")}
+	c := NewClient(fr)
+	if err := c.Rename(context.Background(), "deploy-app-x1y2", "ship app"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	assertArgs(t, fr.gotArgs, []string{"rename", "deploy-app-x1y2", "ship app"})
+}
+
+func TestClientRemoveLeaf(t *testing.T) {
+	fr := &fakeRunner{out: []byte("removed\n")}
+	c := NewClient(fr)
+	if err := c.Remove(context.Background(), "write-tests-hgny", false); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	assertArgs(t, fr.gotArgs, []string{"remove", "write-tests-hgny"})
+}
+
+func TestClientRemoveRecursive(t *testing.T) {
+	fr := &fakeRunner{out: []byte("removed\n")}
+	c := NewClient(fr)
+	if err := c.Remove(context.Background(), "deploy-app-x1y2", true); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	assertArgs(t, fr.gotArgs, []string{"remove", "deploy-app-x1y2", "--recursive"})
+}
+
 // errString is a tiny helper to make an error from a string.
 type errString string
 

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +20,19 @@ type stubClient struct {
 
 	ctxErr   error
 	ctxCalls []struct{ id, content string }
+
+	addErr   error
+	addID    string // id to return from Add
+	addCalls []struct{ parentID, name string }
+
+	renameErr   error
+	renameCalls []struct{ id, name string }
+
+	removeErr   error
+	removeCalls []struct {
+		id        string
+		recursive bool
+	}
 }
 
 func (s *stubClient) List(_ context.Context) ([]yaks.Yak, error) { return s.roots, s.listErr }
@@ -28,6 +43,25 @@ func (s *stubClient) SetState(_ context.Context, id, state string) error {
 func (s *stubClient) SetContext(_ context.Context, id, content string) error {
 	s.ctxCalls = append(s.ctxCalls, struct{ id, content string }{id, content})
 	return s.ctxErr
+}
+func (s *stubClient) Add(_ context.Context, parentID, name string, _ map[string]bool) (string, error) {
+	s.addCalls = append(s.addCalls, struct{ parentID, name string }{parentID, name})
+	id := s.addID
+	if id == "" {
+		id = "new-id"
+	}
+	return id, s.addErr
+}
+func (s *stubClient) Rename(_ context.Context, id, name string) error {
+	s.renameCalls = append(s.renameCalls, struct{ id, name string }{id, name})
+	return s.renameErr
+}
+func (s *stubClient) Remove(_ context.Context, id string, recursive bool) error {
+	s.removeCalls = append(s.removeCalls, struct {
+		id        string
+		recursive bool
+	}{id, recursive})
+	return s.removeErr
 }
 
 func twoYaks() []yaks.Yak {
@@ -136,6 +170,22 @@ func TestTriageNoSelectionIsNoOp(t *testing.T) {
 	}
 	if len(sc.setCalls) != 0 {
 		t.Fatalf("SetState should not be called with no selection, got %+v", sc.setCalls)
+	}
+}
+
+func TestAddChildRenameRemoveNoSelectionAreNoOps(t *testing.T) {
+	// No load happened, so there are no rows and nothing is selected. a (add
+	// child), R (rename), and x (remove) all require a selection and must be
+	// safe no-ops — they must not open a mode. A (add root) is intentionally
+	// NOT here: it works with an empty tree.
+	for _, r := range []rune{'a', 'R', 'x'} {
+		sc := &stubClient{roots: twoYaks()}
+		m := New(sc)
+		m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		mm := m2.(Model)
+		if mm.inputMode != inputNone || mm.confirming {
+			t.Fatalf("%q with no selection should not open a mode (inputMode=%v confirming=%v)", r, mm.inputMode, mm.confirming)
+		}
 	}
 }
 
@@ -582,6 +632,279 @@ func TestEscClearsCommittedSearch(t *testing.T) {
 	}
 	if len(result.rows) != 3 {
 		t.Fatalf("esc should restore full tree: got %d rows, want 3", len(result.rows))
+	}
+}
+
+func TestAddChildOpensInput(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	mm := m2.(Model)
+	if mm.inputMode != inputAddChild {
+		t.Fatalf("inputMode = %v, want inputAddChild", mm.inputMode)
+	}
+	if mm.inputParID != "a" {
+		t.Fatalf("inputParID = %q, want a", mm.inputParID)
+	}
+	if mm.input.Value() != "" {
+		t.Fatalf("add input should start empty, got %q", mm.input.Value())
+	}
+}
+
+func TestAddRootOpensInputWithNoParent(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	mm := m2.(Model)
+	if mm.inputMode != inputAddRoot {
+		t.Fatalf("inputMode = %v, want inputAddRoot", mm.inputMode)
+	}
+	if mm.inputParID != "" {
+		t.Fatalf("inputParID = %q, want empty", mm.inputParID)
+	}
+}
+
+func TestRenameOpensPrefilledInput(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	mm := m2.(Model)
+	if mm.inputMode != inputRename {
+		t.Fatalf("inputMode = %v, want inputRename", mm.inputMode)
+	}
+	if mm.inputTgtID != "a" {
+		t.Fatalf("inputTgtID = %q, want a", mm.inputTgtID)
+	}
+	if mm.input.Value() != "alpha" {
+		t.Fatalf("rename input = %q, want prefilled 'alpha'", mm.input.Value())
+	}
+}
+
+func TestRemoveOpensConfirm(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	mm := m2.(Model)
+	if !mm.confirming {
+		t.Fatal("x should open the remove confirmation")
+	}
+	if mm.removeID != "a" || mm.removeName != "alpha" {
+		t.Fatalf("removeID/Name = %q/%q, want a/alpha", mm.removeID, mm.removeName)
+	}
+	if mm.removeKids != 0 {
+		t.Fatalf("removeKids = %d, want 0 for a leaf", mm.removeKids)
+	}
+}
+
+func TestRemoveCountsChildren(t *testing.T) {
+	roots := []yaks.Yak{{
+		ID: "p", Name: "parent", State: "todo",
+		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}},
+	}}
+	m := loaded(t, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	mm := m2.(Model)
+	if mm.removeKids != 1 {
+		t.Fatalf("removeKids = %d, want 1", mm.removeKids)
+	}
+}
+
+func typeRunes(m Model, s string) Model {
+	for _, r := range s {
+		mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	return m
+}
+
+func loadedWith(t *testing.T, stub *stubClient, roots []yaks.Yak) Model {
+	t.Helper()
+	m := New(stub)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m3, _ := m2.Update(loadedMsg{roots: roots})
+	return m3.(Model)
+}
+
+func TestAddChildCommitCallsClient(t *testing.T) {
+	stub := &stubClient{roots: twoYaks(), addID: "gamma-zzzz"}
+	m := New(stub)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m3, _ := m2.Update(loadedMsg{roots: twoYaks()})
+	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	mm := typeRunes(m4.(Model), "gamma")
+	m5, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	cmd()
+	if len(stub.addCalls) != 1 {
+		t.Fatalf("addCalls = %d, want 1", len(stub.addCalls))
+	}
+	if stub.addCalls[0].parentID != "a" || stub.addCalls[0].name != "gamma" {
+		t.Fatalf("add called with %+v", stub.addCalls[0])
+	}
+	if m5.(Model).inputMode != inputNone {
+		t.Fatal("inputMode should close after commit")
+	}
+}
+
+func TestAddEmptyIsNoopCancel(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m3, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("empty add should not call the client")
+	}
+	if m3.(Model).inputMode != inputNone {
+		t.Fatal("empty add should close the input")
+	}
+	if len(stub.addCalls) != 0 {
+		t.Fatalf("addCalls = %d, want 0", len(stub.addCalls))
+	}
+}
+
+func TestInputEscCancels(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m3.(Model).inputMode != inputNone {
+		t.Fatal("esc should close the input")
+	}
+	if len(stub.renameCalls) != 0 {
+		t.Fatal("esc must not rename")
+	}
+}
+
+func TestRenameCommitCallsClient(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	mm := m2.(Model)
+	mm.input.SetValue("ship")
+	m3, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	cmd()
+	if len(stub.renameCalls) != 1 || stub.renameCalls[0].id != "a" || stub.renameCalls[0].name != "ship" {
+		t.Fatalf("rename calls = %+v", stub.renameCalls)
+	}
+	if m3.(Model).inputMode != inputNone {
+		t.Fatal("inputMode should close after rename")
+	}
+}
+
+func TestRemoveConfirmYesCallsClient(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m3, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("y should return a remove command")
+	}
+	cmd()
+	if len(stub.removeCalls) != 1 || stub.removeCalls[0].id != "a" || stub.removeCalls[0].recursive {
+		t.Fatalf("remove calls = %+v", stub.removeCalls)
+	}
+	if m3.(Model).confirming {
+		t.Fatal("confirm should close after y")
+	}
+}
+
+func TestRemoveConfirmNoCancels(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if m3.(Model).confirming {
+		t.Fatal("n should cancel the confirm")
+	}
+	if len(stub.removeCalls) != 0 {
+		t.Fatal("n must not remove")
+	}
+}
+
+func TestRemoveRecursiveWhenChildren(t *testing.T) {
+	roots := []yaks.Yak{{
+		ID: "p", Name: "parent", State: "todo",
+		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}},
+	}}
+	stub := &stubClient{roots: roots}
+	m := loadedWith(t, stub, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	cmd()
+	if len(stub.removeCalls) != 1 || !stub.removeCalls[0].recursive {
+		t.Fatalf("remove calls = %+v, want recursive", stub.removeCalls)
+	}
+}
+
+func TestAddErrorSurfaces(t *testing.T) {
+	// When Add fails, the command must yield a friendly errMsg (not a reload),
+	// and applying it must surface a non-empty status message.
+	stub := &stubClient{roots: twoYaks(), addErr: errors.New("id exists")}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	mm := typeRunes(m2.(Model), "gamma")
+	m3, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	msg := cmd()
+	em, ok := msg.(errMsg)
+	if !ok {
+		t.Fatalf("expected errMsg on Add failure, got %T", msg)
+	}
+	if !strings.Contains(em.err.Error(), "couldn't create yak") {
+		t.Fatalf("error should carry friendly prefix, got %q", em.err.Error())
+	}
+	m4, _ := m3.(Model).Update(msg)
+	if m4.(Model).status == "" {
+		t.Fatal("errMsg should set a non-empty status")
+	}
+}
+
+func TestRenameErrorSurfaces(t *testing.T) {
+	stub := &stubClient{roots: twoYaks(), renameErr: errors.New("rename boom")}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	mm := m2.(Model)
+	mm.input.SetValue("ship")
+	m3, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	msg := cmd()
+	em, ok := msg.(errMsg)
+	if !ok {
+		t.Fatalf("expected errMsg on Rename failure, got %T", msg)
+	}
+	if !strings.Contains(em.err.Error(), "rename failed") {
+		t.Fatalf("error should carry friendly prefix, got %q", em.err.Error())
+	}
+	m4, _ := m3.(Model).Update(msg)
+	if m4.(Model).status == "" {
+		t.Fatal("errMsg should set a non-empty status")
+	}
+}
+
+func TestRemoveErrorSurfaces(t *testing.T) {
+	stub := &stubClient{roots: twoYaks(), removeErr: errors.New("remove boom")}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m3, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("y should return a remove command")
+	}
+	msg := cmd()
+	em, ok := msg.(errMsg)
+	if !ok {
+		t.Fatalf("expected errMsg on Remove failure, got %T", msg)
+	}
+	if !strings.Contains(em.err.Error(), "remove failed") {
+		t.Fatalf("error should carry friendly prefix, got %q", em.err.Error())
+	}
+	m4, _ := m3.(Model).Update(msg)
+	if m4.(Model).status == "" {
+		t.Fatal("errMsg should set a non-empty status")
 	}
 }
 

@@ -44,6 +44,9 @@ make build
 | `tab` | switch pane focus |
 | `w` / `b` / `d` / `t` | set state wip / blocked / done / todo |
 | `e` | edit context body inline |
+| `a` / `A` | add a child yak / a root yak |
+| `R` | rename the selected yak |
+| `x` | remove the selected yak (confirms; recursive if it has children) |
 | `H` | hide done yaks |
 | `W` | focus wip / blocked |
 | `f` | search by name |

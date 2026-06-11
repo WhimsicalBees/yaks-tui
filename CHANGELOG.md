@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Add, rename, and remove yaks from inside the TUI: `a` adds a child under the
+  cursor, `A` adds a root, `R` renames in place, `x` removes (with a
+  confirmation; recursive when the yak has children).
+- View filters and search: `H` hides done yaks, `W` focuses wip / blocked, `f`
+  searches by name, and `esc` clears active filters.
+
 ## [1.1.0]
 
 ### Added
