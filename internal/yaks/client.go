@@ -93,6 +93,27 @@ func (c *Client) SetContext(ctx context.Context, id, content string) error {
 	return err
 }
 
+// Add creates a new yak named name and returns its id. When parentID is "" the
+// yak is a root; otherwise it's nested under parentID. The id is generated to
+// be unique against existing and passed via --id so the caller knows it without
+// parsing yx output. existing is the set of ids already in the tree.
+func (c *Client) Add(ctx context.Context, parentID, name string, existing map[string]bool) (string, error) {
+	return c.add(ctx, parentID, name, existing, randomSuffix)
+}
+
+// add is Add with an injectable suffix generator for tests.
+func (c *Client) add(ctx context.Context, parentID, name string, existing map[string]bool, gen func() string) (string, error) {
+	id := uniqueID(name, existing, gen)
+	args := []string{"add", name, "--id", id}
+	if parentID != "" {
+		args = append(args, "--under", parentID)
+	}
+	if _, err := c.r.Run(ctx, args...); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 // BinaryAvailable reports whether `yx` is on PATH.
 func BinaryAvailable() (string, error) {
 	return exec.LookPath("yx")
