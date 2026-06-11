@@ -18,6 +18,19 @@ type stubClient struct {
 
 	ctxErr   error
 	ctxCalls []struct{ id, content string }
+
+	addErr   error
+	addID    string // id to return from Add
+	addCalls []struct{ parentID, name string }
+
+	renameErr   error
+	renameCalls []struct{ id, name string }
+
+	removeErr   error
+	removeCalls []struct {
+		id        string
+		recursive bool
+	}
 }
 
 func (s *stubClient) List(_ context.Context) ([]yaks.Yak, error) { return s.roots, s.listErr }
@@ -28,6 +41,25 @@ func (s *stubClient) SetState(_ context.Context, id, state string) error {
 func (s *stubClient) SetContext(_ context.Context, id, content string) error {
 	s.ctxCalls = append(s.ctxCalls, struct{ id, content string }{id, content})
 	return s.ctxErr
+}
+func (s *stubClient) Add(_ context.Context, parentID, name string, _ map[string]bool) (string, error) {
+	s.addCalls = append(s.addCalls, struct{ parentID, name string }{parentID, name})
+	id := s.addID
+	if id == "" {
+		id = "new-id"
+	}
+	return id, s.addErr
+}
+func (s *stubClient) Rename(_ context.Context, id, name string) error {
+	s.renameCalls = append(s.renameCalls, struct{ id, name string }{id, name})
+	return s.renameErr
+}
+func (s *stubClient) Remove(_ context.Context, id string, recursive bool) error {
+	s.removeCalls = append(s.removeCalls, struct {
+		id        string
+		recursive bool
+	}{id, recursive})
+	return s.removeErr
 }
 
 func twoYaks() []yaks.Yak {

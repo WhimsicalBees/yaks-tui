@@ -27,6 +27,9 @@ type dataSource interface {
 	List(ctx context.Context) ([]yaks.Yak, error)
 	SetState(ctx context.Context, id, state string) error
 	SetContext(ctx context.Context, id, content string) error
+	Add(ctx context.Context, parentID, name string, existing map[string]bool) (string, error)
+	Rename(ctx context.Context, id, newName string) error
+	Remove(ctx context.Context, id string, recursive bool) error
 }
 
 type focus int
@@ -34,6 +37,15 @@ type focus int
 const (
 	focusTree focus = iota
 	focusDetail
+)
+
+type inputMode int
+
+const (
+	inputNone inputMode = iota
+	inputAddChild
+	inputAddRoot
+	inputRename
 )
 
 // Messages produced by async commands.
@@ -75,6 +87,16 @@ type Model struct {
 	searching bool            // true while the search input line is open
 	search    textinput.Model // one-line incremental name filter
 	query     string          // committed search text (applied when input closed)
+
+	inputMode  inputMode       // which add/rename flow is open (inputNone = closed)
+	inputParID string          // parent id for inputAddChild ("" = root)
+	inputTgtID string          // target id for inputRename
+	input      textinput.Model // one-line input for add/rename
+
+	confirming bool   // remove confirmation prompt open
+	removeID   string // captured target id
+	removeName string // for the prompt text
+	removeKids int    // child count → recursive flag + prompt wording
 }
 
 func New(client dataSource) Model {
@@ -94,6 +116,9 @@ func New(client dataSource) Model {
 	ti := textinput.New()
 	ti.Prompt = "search: "
 	ti.CharLimit = 0
+	in := textinput.New()
+	in.Prompt = ""
+	in.CharLimit = 0
 	return Model{
 		client:   client,
 		keys:     defaultKeys(),
@@ -102,6 +127,7 @@ func New(client dataSource) Model {
 		mdStyle:  resolveMarkdownStyle(isTTY, dark),
 		ta:       ta,
 		search:   ti,
+		input:    in,
 	}
 }
 
