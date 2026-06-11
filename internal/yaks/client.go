@@ -114,6 +114,23 @@ func (c *Client) add(ctx context.Context, parentID, name string, existing map[st
 	return id, nil
 }
 
+// Rename changes a yak's name in place (no move), addressed by id.
+func (c *Client) Rename(ctx context.Context, id, newName string) error {
+	_, err := c.r.Run(ctx, "rename", id, newName)
+	return err
+}
+
+// Remove deletes a yak by id. A yak with children requires recursive=true
+// (yx refuses otherwise).
+func (c *Client) Remove(ctx context.Context, id string, recursive bool) error {
+	args := []string{"remove", id}
+	if recursive {
+		args = append(args, "--recursive")
+	}
+	_, err := c.r.Run(ctx, args...)
+	return err
+}
+
 // BinaryAvailable reports whether `yx` is on PATH.
 func BinaryAvailable() (string, error) {
 	return exec.LookPath("yx")

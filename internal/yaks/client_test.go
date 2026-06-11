@@ -167,6 +167,33 @@ func assertArgs(t *testing.T, got, want []string) {
 	}
 }
 
+func TestClientRename(t *testing.T) {
+	fr := &fakeRunner{out: []byte("renamed\n")}
+	c := NewClient(fr)
+	if err := c.Rename(context.Background(), "deploy-app-x1y2", "ship app"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	assertArgs(t, fr.gotArgs, []string{"rename", "deploy-app-x1y2", "ship app"})
+}
+
+func TestClientRemoveLeaf(t *testing.T) {
+	fr := &fakeRunner{out: []byte("removed\n")}
+	c := NewClient(fr)
+	if err := c.Remove(context.Background(), "write-tests-hgny", false); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	assertArgs(t, fr.gotArgs, []string{"remove", "write-tests-hgny"})
+}
+
+func TestClientRemoveRecursive(t *testing.T) {
+	fr := &fakeRunner{out: []byte("removed\n")}
+	c := NewClient(fr)
+	if err := c.Remove(context.Background(), "deploy-app-x1y2", true); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	assertArgs(t, fr.gotArgs, []string{"remove", "deploy-app-x1y2", "--recursive"})
+}
+
 // errString is a tiny helper to make an error from a string.
 type errString string
 
