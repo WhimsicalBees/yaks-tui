@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -816,6 +818,77 @@ func TestRemoveRecursiveWhenChildren(t *testing.T) {
 	cmd()
 	if len(stub.removeCalls) != 1 || !stub.removeCalls[0].recursive {
 		t.Fatalf("remove calls = %+v, want recursive", stub.removeCalls)
+	}
+}
+
+func TestAddErrorSurfaces(t *testing.T) {
+	// When Add fails, the command must yield a friendly errMsg (not a reload),
+	// and applying it must surface a non-empty status message.
+	stub := &stubClient{roots: twoYaks(), addErr: errors.New("id exists")}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	mm := typeRunes(m2.(Model), "gamma")
+	m3, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	msg := cmd()
+	em, ok := msg.(errMsg)
+	if !ok {
+		t.Fatalf("expected errMsg on Add failure, got %T", msg)
+	}
+	if !strings.Contains(em.err.Error(), "couldn't create yak") {
+		t.Fatalf("error should carry friendly prefix, got %q", em.err.Error())
+	}
+	m4, _ := m3.(Model).Update(msg)
+	if m4.(Model).status == "" {
+		t.Fatal("errMsg should set a non-empty status")
+	}
+}
+
+func TestRenameErrorSurfaces(t *testing.T) {
+	stub := &stubClient{roots: twoYaks(), renameErr: errors.New("rename boom")}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	mm := m2.(Model)
+	mm.input.SetValue("ship")
+	m3, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	msg := cmd()
+	em, ok := msg.(errMsg)
+	if !ok {
+		t.Fatalf("expected errMsg on Rename failure, got %T", msg)
+	}
+	if !strings.Contains(em.err.Error(), "rename failed") {
+		t.Fatalf("error should carry friendly prefix, got %q", em.err.Error())
+	}
+	m4, _ := m3.(Model).Update(msg)
+	if m4.(Model).status == "" {
+		t.Fatal("errMsg should set a non-empty status")
+	}
+}
+
+func TestRemoveErrorSurfaces(t *testing.T) {
+	stub := &stubClient{roots: twoYaks(), removeErr: errors.New("remove boom")}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m3, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("y should return a remove command")
+	}
+	msg := cmd()
+	em, ok := msg.(errMsg)
+	if !ok {
+		t.Fatalf("expected errMsg on Remove failure, got %T", msg)
+	}
+	if !strings.Contains(em.err.Error(), "remove failed") {
+		t.Fatalf("error should carry friendly prefix, got %q", em.err.Error())
+	}
+	m4, _ := m3.(Model).Update(msg)
+	if m4.(Model).status == "" {
+		t.Fatal("errMsg should set a non-empty status")
 	}
 }
 

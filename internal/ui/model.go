@@ -289,6 +289,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputMode = inputNone
 			m.input.Blur()
 			if name == "" {
+				m.input.SetValue("")
 				return m, nil // empty = no-op cancel
 			}
 			switch mode {
@@ -629,6 +630,16 @@ func (m Model) existingIDs() map[string]bool {
 	return ids
 }
 
+// reloadPreserving lists the tree and returns a message that reloads it while
+// keeping the cursor on the yak with id (or its nearest neighbor if it's gone).
+func (m Model) reloadPreserving(id string) tea.Msg {
+	roots, err := m.client.List(context.Background())
+	if err != nil {
+		return errMsg{err}
+	}
+	return loadedMsgPreserving{roots: roots, prevID: id}
+}
+
 func (m Model) addCmd(parentID, name string) tea.Cmd {
 	existing := m.existingIDs()
 	return func() tea.Msg {
@@ -636,11 +647,7 @@ func (m Model) addCmd(parentID, name string) tea.Cmd {
 		if err != nil {
 			return errMsg{fmt.Errorf("couldn't create yak: %w", err)}
 		}
-		roots, err := m.client.List(context.Background())
-		if err != nil {
-			return errMsg{err}
-		}
-		return loadedMsgPreserving{roots: roots, prevID: id}
+		return m.reloadPreserving(id)
 	}
 }
 
@@ -649,11 +656,7 @@ func (m Model) renameCmd(id, name string) tea.Cmd {
 		if err := m.client.Rename(context.Background(), id, name); err != nil {
 			return errMsg{fmt.Errorf("rename failed: %w", err)}
 		}
-		roots, err := m.client.List(context.Background())
-		if err != nil {
-			return errMsg{err}
-		}
-		return loadedMsgPreserving{roots: roots, prevID: id}
+		return m.reloadPreserving(id)
 	}
 }
 
@@ -664,13 +667,9 @@ func (m Model) removeCmd() tea.Cmd {
 		if err := m.client.Remove(context.Background(), id, recursive); err != nil {
 			return errMsg{fmt.Errorf("remove failed: %w", err)}
 		}
-		roots, err := m.client.List(context.Background())
-		if err != nil {
-			return errMsg{err}
-		}
 		// prevID is the removed yak; IndexOfID won't find it, so the cursor
 		// stays clamped near where it was — the intended "fall to neighbor".
-		return loadedMsgPreserving{roots: roots, prevID: id}
+		return m.reloadPreserving(id)
 	}
 }
 
