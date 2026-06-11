@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
@@ -148,6 +149,55 @@ func TestResolveMarkdownStyle(t *testing.T) {
 			t.Errorf("resolveMarkdownStyle(term=%v, dark=%v) = %q, want %q",
 				c.isTerminal, c.dark, got, c.want)
 		}
+	}
+}
+
+func TestFooterAddChildPrompt(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	out := m2.(Model).View()
+	if !contains(out, "add child of") || !contains(out, "alpha") {
+		t.Fatalf("footer missing add-child prompt:\n%s", out)
+	}
+}
+
+func TestFooterAddRootPrompt(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	out := m2.(Model).View()
+	if !contains(out, "add root") {
+		t.Fatalf("footer missing add-root prompt:\n%s", out)
+	}
+}
+
+func TestFooterRenamePrompt(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	out := m2.(Model).View()
+	if !contains(out, "rename") {
+		t.Fatalf("footer missing rename prompt:\n%s", out)
+	}
+}
+
+func TestFooterConfirmLeaf(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	out := m2.(Model).View()
+	if !contains(out, `remove "alpha"?`) {
+		t.Fatalf("footer missing leaf confirm:\n%s", out)
+	}
+}
+
+func TestFooterConfirmSubtree(t *testing.T) {
+	roots := []yaks.Yak{{
+		ID: "p", Name: "parent", State: "todo",
+		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}},
+	}}
+	m := loaded(t, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	out := m2.(Model).View()
+	if !contains(out, "and its 1 children") {
+		t.Fatalf("footer missing subtree confirm:\n%s", out)
 	}
 }
 

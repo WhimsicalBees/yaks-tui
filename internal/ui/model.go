@@ -729,6 +729,18 @@ func (m Model) View() string {
 
 	var bar string
 	switch {
+	case m.confirming:
+		prompt := fmt.Sprintf("remove %q? (y/n)", m.removeName)
+		if m.removeKids > 0 {
+			prompt = fmt.Sprintf("remove %q and its %d children? (y/n)", m.removeName, m.removeKids)
+		}
+		bar = statusErr.Render(prompt)
+	case m.inputMode == inputAddChild:
+		bar = subtle.Render(fmt.Sprintf("add child of %q: ", m.parentName()) + m.input.View())
+	case m.inputMode == inputAddRoot:
+		bar = subtle.Render("add root: " + m.input.View())
+	case m.inputMode == inputRename:
+		bar = subtle.Render("rename: " + m.input.View())
 	case m.searching:
 		bar = subtle.Render(m.search.View() + "  (enter to keep · esc to clear)")
 	case m.editing:
@@ -743,6 +755,27 @@ func (m Model) View() string {
 		}
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, body, bar)
+}
+
+// parentName returns the display name of inputParID, or "" if not found. Used
+// only to label the add-child prompt.
+func (m Model) parentName() string {
+	if m.inputParID == "" {
+		return ""
+	}
+	var found string
+	var walk func(ys []yaks.Yak)
+	walk = func(ys []yaks.Yak) {
+		for i := range ys {
+			if ys[i].ID == m.inputParID {
+				found = ys[i].Name
+				return
+			}
+			walk(ys[i].Children)
+		}
+	}
+	walk(m.roots)
+	return found
 }
 
 // filterIndicator summarizes active view filters for the status bar, or "" when
