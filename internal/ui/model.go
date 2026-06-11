@@ -184,6 +184,23 @@ func (m Model) selectedID() string {
 	return ""
 }
 
+// selectedYak returns a copy of the yak under the cursor and true, or false if
+// there's no selection.
+func (m Model) selectedYak() (yaks.Yak, bool) {
+	if m.cursor >= 0 && m.cursor < len(m.rows) {
+		return *m.rows[m.cursor].Yak, true
+	}
+	return yaks.Yak{}, false
+}
+
+// openInput opens the single-line input in the given mode, seeded with value.
+func (m *Model) openInput(mode inputMode, value string) {
+	m.inputMode = mode
+	m.input.SetValue(value)
+	m.input.CursorEnd()
+	m.input.Focus()
+}
+
 // restoreCursor puts the cursor back on the yak with the given id if it's still
 // visible. rebuildRows has already clamped the cursor to a valid row, so when
 // the yak is gone we simply leave that clamped position.
@@ -364,6 +381,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.findCmd()
 	case key.Matches(msg, m.keys.Edit):
 		return m.enterEdit()
+	case key.Matches(msg, m.keys.Add):
+		if y, ok := m.selectedYak(); ok {
+			m.inputParID = y.ID
+			m.openInput(inputAddChild, "")
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.AddRoot):
+		m.inputParID = ""
+		m.openInput(inputAddRoot, "")
+		return m, nil
+	case key.Matches(msg, m.keys.Rename):
+		if y, ok := m.selectedYak(); ok {
+			m.inputTgtID = y.ID
+			m.openInput(inputRename, y.Name)
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Remove):
+		if y, ok := m.selectedYak(); ok {
+			m.confirming = true
+			m.removeID = y.ID
+			m.removeName = y.Name
+			m.removeKids = len(y.Children)
+		}
+		return m, nil
 	case key.Matches(msg, m.keys.HideDone):
 		id := m.selectedID()
 		m.hideDone = !m.hideDone

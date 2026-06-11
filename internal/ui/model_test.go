@@ -617,6 +617,76 @@ func TestEscClearsCommittedSearch(t *testing.T) {
 	}
 }
 
+func TestAddChildOpensInput(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	mm := m2.(Model)
+	if mm.inputMode != inputAddChild {
+		t.Fatalf("inputMode = %v, want inputAddChild", mm.inputMode)
+	}
+	if mm.inputParID != "a" {
+		t.Fatalf("inputParID = %q, want a", mm.inputParID)
+	}
+	if mm.input.Value() != "" {
+		t.Fatalf("add input should start empty, got %q", mm.input.Value())
+	}
+}
+
+func TestAddRootOpensInputWithNoParent(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	mm := m2.(Model)
+	if mm.inputMode != inputAddRoot {
+		t.Fatalf("inputMode = %v, want inputAddRoot", mm.inputMode)
+	}
+	if mm.inputParID != "" {
+		t.Fatalf("inputParID = %q, want empty", mm.inputParID)
+	}
+}
+
+func TestRenameOpensPrefilledInput(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	mm := m2.(Model)
+	if mm.inputMode != inputRename {
+		t.Fatalf("inputMode = %v, want inputRename", mm.inputMode)
+	}
+	if mm.inputTgtID != "a" {
+		t.Fatalf("inputTgtID = %q, want a", mm.inputTgtID)
+	}
+	if mm.input.Value() != "alpha" {
+		t.Fatalf("rename input = %q, want prefilled 'alpha'", mm.input.Value())
+	}
+}
+
+func TestRemoveOpensConfirm(t *testing.T) {
+	m := loaded(t, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	mm := m2.(Model)
+	if !mm.confirming {
+		t.Fatal("x should open the remove confirmation")
+	}
+	if mm.removeID != "a" || mm.removeName != "alpha" {
+		t.Fatalf("removeID/Name = %q/%q, want a/alpha", mm.removeID, mm.removeName)
+	}
+	if mm.removeKids != 0 {
+		t.Fatalf("removeKids = %d, want 0 for a leaf", mm.removeKids)
+	}
+}
+
+func TestRemoveCountsChildren(t *testing.T) {
+	roots := []yaks.Yak{{
+		ID: "p", Name: "parent", State: "todo",
+		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}},
+	}}
+	m := loaded(t, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	mm := m2.(Model)
+	if mm.removeKids != 1 {
+		t.Fatalf("removeKids = %d, want 1", mm.removeKids)
+	}
+}
+
 func TestWipFocusComposesWithSearch(t *testing.T) {
 	// Tree: two wip yaks (one matches "auth", one doesn't), one todo that matches
 	// "auth". W + search "auth" should show only the wip yak whose name contains
