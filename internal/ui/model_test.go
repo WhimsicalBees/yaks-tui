@@ -687,6 +687,138 @@ func TestRemoveCountsChildren(t *testing.T) {
 	}
 }
 
+func typeRunes(m Model, s string) Model {
+	for _, r := range s {
+		mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	return m
+}
+
+func loadedWith(t *testing.T, stub *stubClient, roots []yaks.Yak) Model {
+	t.Helper()
+	m := New(stub)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m3, _ := m2.Update(loadedMsg{roots: roots})
+	return m3.(Model)
+}
+
+func TestAddChildCommitCallsClient(t *testing.T) {
+	stub := &stubClient{roots: twoYaks(), addID: "gamma-zzzz"}
+	m := New(stub)
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m3, _ := m2.Update(loadedMsg{roots: twoYaks()})
+	m4, _ := m3.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	mm := typeRunes(m4.(Model), "gamma")
+	m5, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	cmd()
+	if len(stub.addCalls) != 1 {
+		t.Fatalf("addCalls = %d, want 1", len(stub.addCalls))
+	}
+	if stub.addCalls[0].parentID != "a" || stub.addCalls[0].name != "gamma" {
+		t.Fatalf("add called with %+v", stub.addCalls[0])
+	}
+	if m5.(Model).inputMode != inputNone {
+		t.Fatal("inputMode should close after commit")
+	}
+}
+
+func TestAddEmptyIsNoopCancel(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m3, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("empty add should not call the client")
+	}
+	if m3.(Model).inputMode != inputNone {
+		t.Fatal("empty add should close the input")
+	}
+	if len(stub.addCalls) != 0 {
+		t.Fatalf("addCalls = %d, want 0", len(stub.addCalls))
+	}
+}
+
+func TestInputEscCancels(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m3.(Model).inputMode != inputNone {
+		t.Fatal("esc should close the input")
+	}
+	if len(stub.renameCalls) != 0 {
+		t.Fatal("esc must not rename")
+	}
+}
+
+func TestRenameCommitCallsClient(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	mm := m2.(Model)
+	mm.input.SetValue("ship")
+	m3, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should return a command")
+	}
+	cmd()
+	if len(stub.renameCalls) != 1 || stub.renameCalls[0].id != "a" || stub.renameCalls[0].name != "ship" {
+		t.Fatalf("rename calls = %+v", stub.renameCalls)
+	}
+	if m3.(Model).inputMode != inputNone {
+		t.Fatal("inputMode should close after rename")
+	}
+}
+
+func TestRemoveConfirmYesCallsClient(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m3, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("y should return a remove command")
+	}
+	cmd()
+	if len(stub.removeCalls) != 1 || stub.removeCalls[0].id != "a" || stub.removeCalls[0].recursive {
+		t.Fatalf("remove calls = %+v", stub.removeCalls)
+	}
+	if m3.(Model).confirming {
+		t.Fatal("confirm should close after y")
+	}
+}
+
+func TestRemoveConfirmNoCancels(t *testing.T) {
+	stub := &stubClient{roots: twoYaks()}
+	m := loadedWith(t, stub, twoYaks())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m3, _ := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if m3.(Model).confirming {
+		t.Fatal("n should cancel the confirm")
+	}
+	if len(stub.removeCalls) != 0 {
+		t.Fatal("n must not remove")
+	}
+}
+
+func TestRemoveRecursiveWhenChildren(t *testing.T) {
+	roots := []yaks.Yak{{
+		ID: "p", Name: "parent", State: "todo",
+		Children: []yaks.Yak{{ID: "c", Name: "child", State: "todo"}},
+	}}
+	stub := &stubClient{roots: roots}
+	m := loadedWith(t, stub, roots)
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := m2.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	cmd()
+	if len(stub.removeCalls) != 1 || !stub.removeCalls[0].recursive {
+		t.Fatalf("remove calls = %+v, want recursive", stub.removeCalls)
+	}
+}
+
 func TestWipFocusComposesWithSearch(t *testing.T) {
 	// Tree: two wip yaks (one matches "auth", one doesn't), one todo that matches
 	// "auth". W + search "auth" should show only the wip yak whose name contains

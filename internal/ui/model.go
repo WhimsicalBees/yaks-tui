@@ -268,6 +268,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Remove confirmation owns the keyboard: y confirms, anything else cancels.
+	if m.confirming {
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && (msg.Runes[0] == 'y' || msg.Runes[0] == 'Y') {
+			cmd := m.removeCmd()
+			m.confirming = false
+			return m, cmd
+		}
+		m.confirming = false
+		return m, nil
+	}
+
+	// Add/rename input owns the keyboard: enter commits (empty = cancel), esc
+	// cancels, everything else is text input.
+	if m.inputMode != inputNone {
+		switch msg.Type {
+		case tea.KeyEnter:
+			name := strings.TrimSpace(m.input.Value())
+			mode := m.inputMode
+			m.inputMode = inputNone
+			m.input.Blur()
+			if name == "" {
+				return m, nil // empty = no-op cancel
+			}
+			switch mode {
+			case inputAddChild, inputAddRoot:
+				return m, m.addCmd(m.inputParID, name)
+			case inputRename:
+				return m, m.renameCmd(m.inputTgtID, name)
+			}
+			return m, nil
+		case tea.KeyEsc:
+			m.inputMode = inputNone
+			m.input.Blur()
+			m.input.SetValue("")
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
+
 	// Search mode owns the keyboard: enter commits the query (filter persists),
 	// esc clears it, everything else is text input for the search field.
 	if m.searching {
@@ -571,6 +612,65 @@ func (m Model) saveContextCmd() tea.Cmd {
 			return errMsg{err}
 		}
 		return contextSavedMsg{}
+	}
+}
+
+// existingIDs collects every id currently in the tree (for add collision checks).
+func (m Model) existingIDs() map[string]bool {
+	ids := map[string]bool{}
+	var walk func(ys []yaks.Yak)
+	walk = func(ys []yaks.Yak) {
+		for i := range ys {
+			ids[ys[i].ID] = true
+			walk(ys[i].Children)
+		}
+	}
+	walk(m.roots)
+	return ids
+}
+
+func (m Model) addCmd(parentID, name string) tea.Cmd {
+	existing := m.existingIDs()
+	return func() tea.Msg {
+		id, err := m.client.Add(context.Background(), parentID, name, existing)
+		if err != nil {
+			return errMsg{fmt.Errorf("couldn't create yak: %w", err)}
+		}
+		roots, err := m.client.List(context.Background())
+		if err != nil {
+			return errMsg{err}
+		}
+		return loadedMsgPreserving{roots: roots, prevID: id}
+	}
+}
+
+func (m Model) renameCmd(id, name string) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.client.Rename(context.Background(), id, name); err != nil {
+			return errMsg{fmt.Errorf("rename failed: %w", err)}
+		}
+		roots, err := m.client.List(context.Background())
+		if err != nil {
+			return errMsg{err}
+		}
+		return loadedMsgPreserving{roots: roots, prevID: id}
+	}
+}
+
+func (m Model) removeCmd() tea.Cmd {
+	id := m.removeID
+	recursive := m.removeKids > 0
+	return func() tea.Msg {
+		if err := m.client.Remove(context.Background(), id, recursive); err != nil {
+			return errMsg{fmt.Errorf("remove failed: %w", err)}
+		}
+		roots, err := m.client.List(context.Background())
+		if err != nil {
+			return errMsg{err}
+		}
+		// prevID is the removed yak; IndexOfID won't find it, so the cursor
+		// stays clamped near where it was — the intended "fall to neighbor".
+		return loadedMsgPreserving{roots: roots, prevID: id}
 	}
 }
 
